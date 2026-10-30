@@ -1,4 +1,5 @@
 # KadaBook
+<<<<<<< HEAD
 
 Simple accounting for small shops — sales, expenses, products, and reports. Works on **Android**, **iOS**, and **web** (Expo).
 
@@ -229,3 +230,6 @@ Run **`npm run typecheck`** first (automated). Then on **Expo Go** or **web**, w
 ## Tamil quick note
 
 ஃபயர்பேஸ் இல்லாமல் தரவு இந்த போனில் மட்டும் சேமிக்கப்படும். `.env` கீகள் சேர்த்து `firestore.rules` deploy செய்தால் கடை விற்பனை, செலவு, பொருட்கள் cloud-ல் sync ஆகும்.
+=======
+smal shop erp system
+>>>>>>> 6a735794fd213098e4db09ec46b8b32fdc49624d
