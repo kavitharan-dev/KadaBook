@@ -1,0 +1,222 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function adminDoc() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && adminDoc().data.active != false;
+    }
+
+    function isSuperAdmin() {
+      return isAdmin() && adminDoc().data.role == 'super_admin';
+    }
+
+    function shopStatus(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.status;
+    }
+
+    function graceDaysConfig() {
+      return exists(/databases/$(database)/documents/appConfig/main)
+        && 'graceDays' in get(/databases/$(database)/documents/appConfig/main).data
+        ? int(get(/databases/$(database)/documents/appConfig/main).data.graceDays)
+        : 7;
+    }
+
+    function subscriptionDoc(uid) {
+      return get(/databases/$(database)/documents/subscriptions/$(uid)).data;
+    }
+
+    function expiresAtMillis(uid) {
+      return exists(/databases/$(database)/documents/subscriptions/$(uid))
+        ? (
+            subscriptionDoc(uid).expiresAt is timestamp
+              ? subscriptionDoc(uid).expiresAt.toMillis()
+              : int(subscriptionDoc(uid).expiresAt)
+          )
+        : 0;
+    }
+
+    function effectiveShopStatus(uid) {
+      let stored = shopStatus(uid);
+      return stored in ['pending', 'rejected', 'suspended']
+        ? stored
+        : !exists(/databases/$(database)/documents/subscriptions/$(uid))
+          ? (stored == 'trial' ? 'trial' : 'expired')
+          : request.time.toMillis() <= expiresAtMillis(uid)
+            ? (
+                subscriptionDoc(uid).status == 'trial' || subscriptionDoc(uid).plan == 'trial'
+                  ? 'trial'
+                  : 'active'
+              )
+            : request.time.toMillis() <= expiresAtMillis(uid) + graceDaysConfig() * 86400000
+              ? 'grace'
+              : 'expired';
+    }
+
+    function defaultFeature(status, feature) {
+      return (
+          (status == 'trial' || status == 'active' || status == 'grace')
+          && ['addSale', 'addExpense', 'manageProducts', 'viewReports', 'exportData', 'useApp', 'editProfile'].hasAny([feature])
+        )
+        || (status == 'expired' && ['viewReports', 'exportData', 'editProfile', 'useApp'].hasAny([feature]))
+        || (status == 'pending' && feature == 'editProfile');
+    }
+
+    function matrixFeature(status, feature) {
+      return !exists(/databases/$(database)/documents/appConfig/access)
+        ? defaultFeature(status, feature)
+        : (
+            !('matrix' in get(/databases/$(database)/documents/appConfig/access).data)
+              ? defaultFeature(status, feature)
+              : get(/databases/$(database)/documents/appConfig/access).data.matrix.get(status, {}).get(feature, defaultFeature(status, feature)) == true
+          );
+    }
+
+    function shopCanFeature(uid, feature) {
+      let user = get(/databases/$(database)/documents/users/$(uid)).data;
+      return ('overrides' in user && user.overrides.keys().hasAny([feature]))
+        ? user.overrides[feature] == true
+        : matrixFeature(effectiveShopStatus(uid), feature);
+    }
+
+    function shopCanWriteBooks(uid) {
+      return shopCanFeature(uid, 'addSale');
+    }
+
+    // ── Admin-only collections ──
+    match /admins/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow create, update: if isSuperAdmin();
+      allow delete: if false;
+    }
+
+    match /auditLogs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /payments/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /subscriptions/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow write: if isAdmin();
+    }
+
+    match /plans/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /announcements/{id} {
+      allow read: if isSignedIn();
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']))
+        || (isSignedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['dismissCount']));
+    }
+
+    match /tickets/{id} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if isAdmin()
+        || (isSignedIn() && resource.data.uid == request.auth.uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status']));
+      allow delete: if false;
+    }
+
+    match /appConfig/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // Remote config for OTA feature flags, banners, and maintenance.
+    // Edit this document in the Firebase console (client writes are denied).
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['shopName'])
+        && (!('status' in request.resource.data) || request.resource.data.status == 'pending');
+
+      allow update: if isAdmin()
+        || (isSignedIn()
+          && request.auth.uid == uid
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'rejectReason', 'overrides', 'overrideReason']));
+
+      allow delete: if false;
+
+      match /seen/{announcementId} {
+        allow read, write: if isSignedIn() && request.auth.uid == uid;
+      }
+
+      match /sales/{saleId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn()
+          && request.auth.uid == uid
+          && shopCanFeature(uid, 'addSale')
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.amount < 100000000
+          && request.resource.data.createdAt is timestamp;
+        allow update: if false;
+      }
+
+      match /expenses/{expenseId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn()
+          && request.auth.uid == uid
+          && shopCanFeature(uid, 'addExpense')
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.category is string
+          && request.resource.data.category.size() > 0
+          && request.resource.data.category.size() < 80
+          && request.resource.data.createdAt is timestamp;
+        allow update: if false;
+      }
+
+      match /products/{productId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        allow create, update: if isSignedIn()
+          && request.auth.uid == uid
+          && shopCanFeature(uid, 'manageProducts')
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() < 120
+          && request.resource.data.sellingPrice is number
+          && request.resource.data.sellingPrice >= 0
+          && request.resource.data.sellingPrice < 100000000;
+      }
+
+      match /savedOrders/{orderId} {
+        allow read, delete: if isSignedIn() && request.auth.uid == uid;
+        allow create: if isSignedIn()
+          && request.auth.uid == uid
+          && shopCanFeature(uid, 'addSale')
+          && request.resource.data.savedAt is timestamp
+          && request.resource.data.total is number
+          && request.resource.data.total > 0;
+        allow update: if false;
+      }
+    }
+  }
+}

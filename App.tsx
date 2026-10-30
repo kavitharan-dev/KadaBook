@@ -1,20 +1,63 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  Inter_400Regular,
+  Inter_600SemiBold,
+  Inter_700Bold,
+  useFonts,
+} from '@expo-google-fonts/inter';
+import { NotoSansTamil_600SemiBold } from '@expo-google-fonts/noto-sans-tamil';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StyleSheet } from 'react-native';
+import { AppLoading } from './src/components/AppLoading';
+import { AppUpdateNotice } from './src/components/AppUpdateNotice';
+import { RemoteConfigGate } from './src/components/RemoteConfigGate';
+import { AuthProvider } from './src/context/AuthContext';
+import { LocaleProvider, useI18n } from './src/context/LocaleContext';
+import { RemoteConfigProvider } from './src/context/RemoteConfigContext';
+import { ThemeProvider } from './src/context/ThemeContext';
+import { RootNavigator } from './src/navigation/RootNavigator';
+
+function AppShell() {
+  const { t } = useI18n();
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    NotoSansTamil_600SemiBold,
+  });
+
+  if (!fontsLoaded && !fontError) {
+    return <AppLoading message={t((m) => m.loading.starting)} />;
+  }
+
+  return (
+    <RemoteConfigProvider>
+      <AppUpdateNotice />
+      <RemoteConfigGate>
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </RemoteConfigGate>
+    </RemoteConfigProvider>
+  );
+}
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <LocaleProvider>
+          <ThemeProvider>
+            <AppShell />
+          </ThemeProvider>
+        </LocaleProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

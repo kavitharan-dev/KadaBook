@@ -1,0 +1,82 @@
+diff --git a/node_modules/expo-bluetooth-thermal-printer/android/src/main/java/expo/modules/bluetoothprinter/ExpoBluetoothThermalPrinterModule.kt b/node_modules/expo-bluetooth-thermal-printer/android/src/main/java/expo/modules/bluetoothprinter/ExpoBluetoothThermalPrinterModule.kt
+index bdc1d45..7dceb40 100644
+--- a/node_modules/expo-bluetooth-thermal-printer/android/src/main/java/expo/modules/bluetoothprinter/ExpoBluetoothThermalPrinterModule.kt
++++ b/node_modules/expo-bluetooth-thermal-printer/android/src/main/java/expo/modules/bluetoothprinter/ExpoBluetoothThermalPrinterModule.kt
+@@ -85,22 +85,7 @@ class ExpoBluetoothThermalPrinterModule : Module() {
+           var socket: BluetoothSocket? = null
+           var connected = false
+ 
+-          // Method 1: Secure RFCOMM with SPP UUID
+-          if (!connected) {
+-            try {
+-              Log.d(TAG, "Trying secure RFCOMM...")
+-              socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+-              socket.connect()
+-              connected = true
+-              Log.d(TAG, "Connected via secure RFCOMM")
+-            } catch (e: Exception) {
+-              Log.w(TAG, "Secure RFCOMM failed: ${e.message}")
+-              try { socket?.close() } catch (_: Exception) {}
+-              socket = null
+-            }
+-          }
+-
+-          // Method 2: Insecure RFCOMM with SPP UUID
++          // Cheap 58mm printers (MTP-II / PT200) usually accept insecure RFCOMM, not secure.
+           if (!connected) {
+             try {
+               Log.d(TAG, "Trying insecure RFCOMM...")
+@@ -115,39 +100,34 @@ class ExpoBluetoothThermalPrinterModule : Module() {
+             }
+           }
+ 
+-          // Method 3: Reflection-based createRfcommSocket (port 1)
+           if (!connected) {
+             try {
+-              Log.d(TAG, "Trying reflection RFCOMM port 1...")
+-              val method = device.javaClass.getMethod(
+-                "createRfcommSocket",
+-                Int::class.javaPrimitiveType
+-              )
+-              socket = method.invoke(device, 1) as BluetoothSocket
++              Log.d(TAG, "Trying secure RFCOMM...")
++              socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+               socket.connect()
+               connected = true
+-              Log.d(TAG, "Connected via reflection RFCOMM port 1")
++              Log.d(TAG, "Connected via secure RFCOMM")
+             } catch (e: Exception) {
+-              Log.w(TAG, "Reflection RFCOMM failed: ${e.message}")
++              Log.w(TAG, "Secure RFCOMM failed: ${e.message}")
+               try { socket?.close() } catch (_: Exception) {}
+               socket = null
+             }
+           }
+ 
+-          // Method 4: Reflection-based createRfcommSocket (port 2)
+-          if (!connected) {
++          val method = device.javaClass.getMethod(
++            "createRfcommSocket",
++            Int::class.javaPrimitiveType
++          )
++          for (port in 1..5) {
++            if (connected) break
+             try {
+-              Log.d(TAG, "Trying reflection RFCOMM port 2...")
+-              val method = device.javaClass.getMethod(
+-                "createRfcommSocket",
+-                Int::class.javaPrimitiveType
+-              )
+-              socket = method.invoke(device, 2) as BluetoothSocket
++              Log.d(TAG, "Trying reflection RFCOMM port $port...")
++              socket = method.invoke(device, port) as BluetoothSocket
+               socket.connect()
+               connected = true
+-              Log.d(TAG, "Connected via reflection RFCOMM port 2")
++              Log.d(TAG, "Connected via reflection RFCOMM port $port")
+             } catch (e: Exception) {
+-              Log.w(TAG, "Reflection RFCOMM port 2 failed: ${e.message}")
++              Log.w(TAG, "Reflection RFCOMM port $port failed: ${e.message}")
+               try { socket?.close() } catch (_: Exception) {}
+               socket = null
+             }

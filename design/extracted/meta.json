@@ -1,0 +1,52 @@
+[
+  {
+    "id": "a2979293-39a1-4b05-a184-3087ed6648b0",
+    "title": "Dashboard",
+    "file": "dashboard.html"
+  },
+  {
+    "id": "599234f0-6734-4200-b8ed-8e2a61a45605",
+    "title": "Approvals",
+    "file": "approvals.html"
+  },
+  {
+    "id": "a7041261-1559-4b4a-a433-c3ce3b52aad5",
+    "title": "Users / Shops",
+    "file": "users-shops.html"
+  },
+  {
+    "id": "c8200bc7-ca4e-4544-9118-cce379aba30d",
+    "title": "Subscriptions",
+    "file": "subscriptions.html"
+  },
+  {
+    "id": "0f172959-26fb-4c09-a1e0-8d3c41688eaa",
+    "title": "Payments",
+    "file": "payments.html"
+  },
+  {
+    "id": "2c4069a8-0ef5-48a2-b00d-2eb8cf3de0b5",
+    "title": "Announcements",
+    "file": "announcements.html"
+  },
+  {
+    "id": "20a288b7-c0fa-4863-9dc0-45ec27114c6b",
+    "title": "App Control",
+    "file": "app-control.html"
+  },
+  {
+    "id": "0c841ce1-d412-4ab4-9ad2-695138099d85",
+    "title": "Support",
+    "file": "support.html"
+  },
+  {
+    "id": "53968d5a-8932-4d32-8c44-9209ee32b2ac",
+    "title": "Audit Log",
+    "file": "audit-log.html"
+  },
+  {
+    "id": "df3b98f3-33bf-4faa-b3d6-0ae4b80ae731",
+    "title": "Admin Roles",
+    "file": "admin-roles.html"
+  }
+]
