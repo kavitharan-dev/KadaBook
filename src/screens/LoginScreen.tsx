@@ -17,7 +17,7 @@ import { fonts } from '../theme/fonts';
 
 export function LoginScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
-  const { signIn, cloud } = useAuth();
+  const { signIn } = useAuth();
   const { locale, t } = useI18n();
   const { theme, colors } = useTheme();
   const [busy, setBusy] = useState(false);
@@ -66,9 +66,6 @@ export function LoginScreen() {
             onForgot={() => navigation.navigate('ForgotPassword')}
             onCreate={() => navigation.navigate('SignUp')}
           />
-          <Text style={[styles.cloudNote, { color: colors.muted }]}>
-            {cloud ? t((m) => m.login.cloudOn) : t((m) => m.login.cloudOff)}
-          </Text>
         </FadeUp>
         <View style={styles.footer}>
           <ShopIllustration />

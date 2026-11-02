@@ -69,6 +69,13 @@ export async function printOrShareReceipt(
   }
 }
 
+/** PDF share sheet (WhatsApp, Drive, Save). Does not send the bill to the Bluetooth printer. */
+export async function shareReceiptPdf(shopName: string, sale: Sale, settingsOverride?: ReceiptSettings): Promise<PrintResult> {
+  const settings = settingsOverride ?? (await loadReceiptSettings());
+  const html = buildReceiptHtml({ shopName, sale, settings });
+  return outputHtml(html, 'Share receipt');
+}
+
 export async function printTextReport(title: string, body: string): Promise<PrintResult> {
   if (Platform.OS === 'android') {
     try {

@@ -95,6 +95,10 @@ export type Messages = {
     calcTotal: string;
     calcSave: string;
     calcEmpty: string;
+    checkoutTitle: string;
+    checkoutConfirm: string;
+    billDetails: string;
+    newSale: string;
     openingTitle: string;
     openingHint: string;
     openingSkip: string;
@@ -259,5 +263,18 @@ export type Messages = {
     receiptBody: string;
     langTitle: string;
     langBody: string;
+  };
+  shopPlus: {
+    credit: string;
+    reorder: string;
+    importCsv: string;
+    assistant: string;
+    voice: string;
+    suppliers: string;
+    staff: string;
+    backup: string;
+    vat: string;
+    upgrade: string;
+    locked: string;
   };
 };

@@ -21,20 +21,25 @@ async function allowBluetooth() {
 
 function printerScore(name: string) {
   const label = name.toLowerCase();
-  if (/le$|ble|headset|buds|watch|car/.test(label)) return 0;
+  if (/pt-?210/.test(label)) return 3;
+  if (/le$|ble|headset|buds|watch|car|speaker|audio|mhc|avh/.test(label)) return 0;
   if (/mtp|mpt|pt-?200|rpp|printer|pos|thermal|innerprinter/.test(label)) return 2;
   return 1;
 }
 
 function orderPrinters(devices: BluetoothDevice[], saved: string | null) {
   const ranked = [...devices].sort((a, b) => printerScore(b.name ?? '') - printerScore(a.name ?? ''));
-  if (!saved) return ranked;
-  const remembered = ranked.find((device) => device.address === saved);
-  if (!remembered) return ranked;
-  return [remembered, ...ranked.filter((device) => device.address !== saved)];
+  const pt210 = ranked.filter((d) => printerScore(d.name ?? '') === 3);
+  if (pt210.length) return pt210; // PT-210 irundha adhu mattum try pannu
+  const likely = ranked.filter((d) => printerScore(d.name ?? '') > 0);
+  const list = likely.length ? likely : ranked;
+  if (!saved) return list;
+  const remembered = list.find((device) => device.address === saved);
+  if (!remembered) return list;
+  return [remembered, ...list.filter((device) => device.address !== saved)];
 }
 
-/** Print plain text on a paired 58mm Bluetooth printer (MTP-II / PT200). */
+/** Print plain text on a paired 58mm Bluetooth printer (PT-210 / MTP-II / PT200). */
 export async function printThermalText(text: string) {
   if (Platform.OS !== 'android') {
     throw new Error('This Bluetooth printer works on Android only.');
@@ -48,12 +53,13 @@ export async function printThermalText(text: string) {
   }
   const devices = getBondedDevices();
   if (!devices.length) {
-    throw new Error('No paired printer. Settings → Bluetooth → pair MTP-II or PT200. PIN 0000.');
+    throw new Error('No paired printer. Settings -> Bluetooth -> pair PT-210. PIN 0000.');
   }
   const saved = await AsyncStorage.getItem(SAVED_ADDRESS);
   const candidates = orderPrinters(devices, saved);
-  let lastError: unknown = null;
+  const errors: string[] = [];
   for (const device of candidates) {
+    const label = device.name || device.address;
     const printer = new Printer('58mm');
     try {
       await printer.connect(device.address);
@@ -72,11 +78,12 @@ export async function printThermalText(text: string) {
       await AsyncStorage.setItem(SAVED_ADDRESS, device.address);
       return device;
     } catch (error) {
-      lastError = error;
-      await AsyncStorage.removeItem(SAVED_ADDRESS);
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`${label}: ${msg}`);
+      if (device.address === saved) await AsyncStorage.removeItem(SAVED_ADDRESS);
     }
   }
-  const names = candidates.map((device) => device.name || device.address).join(', ');
-  const detail = lastError instanceof Error ? lastError.message : 'Could not connect.';
-  throw new Error(`${detail} Tried: ${names}. Turn the printer off and on, then pair again in Bluetooth settings. PIN 0000.`);
+  throw new Error(
+    `Print failed.\n${errors.join('\n')}\nTurn the printer off and on, close other apps/browsers using it, then try again.`
+  );
 }

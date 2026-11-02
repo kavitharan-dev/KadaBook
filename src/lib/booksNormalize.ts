@@ -11,18 +11,17 @@ function normalizeProduct(raw: Product & { price?: number }): Product {
     unit: raw.unit ?? 'pcs',
     category: raw.category ?? 'General',
     barcode: raw.barcode,
+    reorderLevel: raw.reorderLevel,
+    batchNo: raw.batchNo,
+    expiry: raw.expiry,
     createdAt: raw.createdAt,
   };
 }
 
 function normalizeSale(raw: Sale): Sale {
   return {
-    id: raw.id,
-    amount: raw.amount,
-    createdAt: raw.createdAt,
-    invoiceNo: raw.invoiceNo,
+    ...raw,
     kind: raw.kind ?? (raw.items?.length ? 'bill' : 'quick'),
-    items: raw.items,
     settled: raw.settled ?? true,
   };
 }
@@ -34,6 +33,12 @@ export function normalizeBooks(raw: Partial<Books> | null | undefined): Books {
     expenses: raw.expenses ?? [],
     products: (raw.products ?? []).map((product) => normalizeProduct(product as Product & { price?: number })),
     savedOrders: raw.savedOrders ?? [],
+    customers: raw.customers ?? [],
+    creditPayments: raw.creditPayments ?? [],
+    suppliers: raw.suppliers ?? [],
+    staff: raw.staff ?? [],
+    returns: raw.returns ?? [],
+    audit: raw.audit ?? [],
     meta: {
       nextInvoice: raw.meta?.nextInvoice ?? 1,
       openingBalances: raw.meta?.openingBalances ?? {},

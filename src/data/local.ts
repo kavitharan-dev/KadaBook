@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeBooks } from '../lib/booksNormalize';
+import { fifoSettledIds } from '../lib/shopPlus';
 import { expenseCategoriesForShop, normalizeCustomExpenseCategory } from '../lib/expenseCategories';
 import {
   assertBillItems,
@@ -7,7 +8,9 @@ import {
   buildBillSale,
   buildQuickSale,
   billTotal,
+  chargedAmount,
   deductStock,
+  draftFields,
   nextInvoiceNo,
 } from '../lib/saleOps';
 import { accountIdentity, assertPassword, type AuthService, type Repository } from './repository';
@@ -159,10 +162,17 @@ export const localRepository: Repository = {
   async addQuickSale(uid, input) {
     const books = await readBooks(uid);
     const invoiceNo = nextInvoiceNo(books);
+    const subtotal = input.items?.length ? billTotal(input.items) : input.amount;
+    const priced = chargedAmount(subtotal, input.discount?.amount ?? 0);
+    const { createdAt, ...extras } = input;
     books.sales.unshift({
       id: id(),
-      createdAt: Date.now(),
-      ...buildQuickSale(input.amount, invoiceNo, input.items),
+      ...buildQuickSale(priced.amount, invoiceNo, input.items),
+      ...extras,
+      subtotal: priced.subtotal,
+      amount: priced.amount,
+      settled: input.paymentMode === 'credit' ? false : true,
+      createdAt: createdAt ?? Date.now(),
     });
     await writeBooks(uid, books);
   },
@@ -172,10 +182,16 @@ export const localRepository: Repository = {
     assertStock(books, input.items);
     const invoiceNo = nextInvoiceNo(books);
     deductStock(books, input.items);
+    const priced = chargedAmount(billTotal(input.items), input.discount?.amount ?? 0);
+    const { createdAt, ...extras } = input;
     books.sales.unshift({
       id: id(),
-      createdAt: Date.now(),
       ...buildBillSale(input.items, invoiceNo),
+      ...extras,
+      subtotal: priced.subtotal,
+      amount: priced.amount,
+      settled: input.paymentMode === 'credit' ? false : true,
+      createdAt: createdAt ?? Date.now(),
     });
     await writeBooks(uid, books);
   },
@@ -184,9 +200,16 @@ export const localRepository: Repository = {
     books.sales = books.sales.filter((sale) => sale.id !== saleId);
     await writeBooks(uid, books);
   },
-  async addExpense(uid, amount, category) {
+  async addExpense(uid, amount, category, extra) {
     const books = await readBooks(uid);
-    books.expenses.unshift({ id: id(), amount, category, createdAt: Date.now() });
+    books.expenses.unshift({
+      id: id(),
+      amount,
+      category,
+      note: extra?.note,
+      branchId: extra?.branchId,
+      createdAt: extra?.createdAt ?? Date.now(),
+    });
     await writeBooks(uid, books);
   },
   async deleteExpense(uid, expenseId) {
@@ -205,6 +228,9 @@ export const localRepository: Repository = {
       unit: input.unit.trim() || 'pcs',
       category: input.category.trim() || 'General',
       barcode: input.barcode?.trim(),
+      reorderLevel: input.reorderLevel,
+      batchNo: input.batchNo?.trim(),
+      expiry: input.expiry?.trim(),
       createdAt: Date.now(),
     });
     await writeBooks(uid, books);
@@ -214,7 +240,28 @@ export const localRepository: Repository = {
     books.products = books.products.filter((product) => product.id !== productId);
     await writeBooks(uid, books);
   },
-  async saveOrder(uid, items) {
+  async updateProduct(uid, productId, input) {
+    const books = await readBooks(uid);
+    books.products = books.products.map((product) =>
+      product.id === productId
+        ? {
+            ...product,
+            name: input.name.trim(),
+            sellingPrice: Math.round(input.sellingPrice),
+            purchasePrice: Math.round(input.purchasePrice),
+            stock: input.stock,
+            unit: input.unit.trim() || 'pcs',
+            category: input.category.trim() || 'General',
+            barcode: input.barcode !== undefined ? input.barcode.trim() : product.barcode,
+            reorderLevel: input.reorderLevel !== undefined ? input.reorderLevel : product.reorderLevel,
+            batchNo: input.batchNo !== undefined ? input.batchNo : product.batchNo,
+            expiry: input.expiry !== undefined ? input.expiry : product.expiry,
+          }
+        : product,
+    );
+    await writeBooks(uid, books);
+  },
+  async saveOrder(uid, items, info) {
     assertBillItems(items);
     const books = await readBooks(uid);
     books.savedOrders.unshift({
@@ -222,6 +269,7 @@ export const localRepository: Repository = {
       items,
       total: billTotal(items),
       savedAt: Date.now(),
+      ...draftFields(info),
     });
     await writeBooks(uid, books);
   },
@@ -256,5 +304,85 @@ export const localRepository: Repository = {
     books.meta = { ...books.meta, customExpenseCategories: custom };
     await writeBooks(uid, books);
     return label;
+  },
+  async updateSale(uid, saleId, patch) {
+    const books = await readBooks(uid);
+    books.sales = books.sales.map((sale) => (sale.id === saleId ? { ...sale, ...patch, editedAt: Date.now() } : sale));
+    await writeBooks(uid, books);
+  },
+  async addCustomer(uid, input) {
+    const books = await readBooks(uid);
+    const customerId = id();
+    books.customers.unshift({
+      id: customerId,
+      name: input.name.trim(),
+      phone: input.phone.trim(),
+      note: input.note?.trim(),
+      points: 0,
+      createdAt: Date.now(),
+    });
+    await writeBooks(uid, books);
+    return customerId;
+  },
+  async addCreditPayment(uid, input) {
+    const books = await readBooks(uid);
+    const collected =
+      books.creditPayments
+        .filter((row) => row.customerId === input.customerId)
+        .reduce((sum, row) => sum + row.amount, 0) + input.amount;
+    const mine = books.sales.filter((sale) => sale.customerId === input.customerId && sale.paymentMode === 'credit');
+    const cleared = new Set(fifoSettledIds(mine, collected));
+    books.sales = books.sales.map((sale) => (cleared.has(sale.id) ? { ...sale, settled: true } : sale));
+    books.creditPayments.unshift({ id: id(), ...input, createdAt: Date.now() });
+    await writeBooks(uid, books);
+  },
+  async addSupplier(uid, input) {
+    const books = await readBooks(uid);
+    books.suppliers.unshift({ id: id(), name: input.name.trim(), phone: input.phone?.trim(), payable: Math.round(input.payable), createdAt: Date.now() });
+    await writeBooks(uid, books);
+  },
+  async addStaff(uid, input) {
+    const books = await readBooks(uid);
+    books.staff.unshift({ id: id(), name: input.name.trim(), role: input.role, active: true, createdAt: Date.now() });
+    await writeBooks(uid, books);
+  },
+  async addAudit(uid, input) {
+    const books = await readBooks(uid);
+    books.audit.unshift({ id: id(), ...input, createdAt: Date.now() });
+    await writeBooks(uid, books);
+  },
+  async addReturn(uid, input) {
+    const books = await readBooks(uid);
+    for (const line of input.items) {
+      const product = books.products.find((item) => item.id === line.productId);
+      if (product) product.stock += line.qty;
+    }
+    books.returns.unshift({ id: id(), ...input, createdAt: Date.now() });
+    await writeBooks(uid, books);
+  },
+  async importProducts(uid, rows) {
+    const books = await readBooks(uid);
+    const known = new Set(books.products.map((product) => (product.barcode || product.name).toLowerCase()));
+    let count = 0;
+    for (const input of rows) {
+      const key = (input.barcode?.trim() || input.name.trim()).toLowerCase();
+      if (!key || known.has(key)) continue;
+      known.add(key);
+      books.products.unshift({
+        id: id(),
+        name: input.name.trim(),
+        sellingPrice: Math.round(input.sellingPrice),
+        purchasePrice: Math.round(input.purchasePrice),
+        stock: input.stock,
+        unit: input.unit.trim() || 'pcs',
+        category: input.category.trim() || 'General',
+        barcode: input.barcode?.trim(),
+        reorderLevel: input.reorderLevel ?? 5,
+        createdAt: Date.now(),
+      });
+      count += 1;
+    }
+    await writeBooks(uid, books);
+    return count;
   },
 };

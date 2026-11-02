@@ -58,7 +58,7 @@ type ShopGateValue = {
   banner: AnnouncementDoc | null;
   popup: AnnouncementDoc | null;
   canAccess: (feature: AccessFeature) => boolean;
-  openRenewWhatsApp: () => void;
+  openRenewWhatsApp: (message?: unknown) => void;
   dismissAnnouncement: (id: string, kind: 'banner' | 'popup') => Promise<void>;
   markAnnouncementView: (id: string) => void;
 };
@@ -76,6 +76,10 @@ function mapProfile(data: Record<string, unknown> | undefined): ShopProfile {
     rejectReason: data?.rejectReason ? String(data.rejectReason) : undefined,
     overrides: data?.overrides as ShopProfile['overrides'],
     overrideReason: data?.overrideReason ? String(data.overrideReason) : undefined,
+    tierOverride:
+      data?.tierOverride === 'basic' || data?.tierOverride === 'pro' || data?.tierOverride === 'premium'
+        ? data.tierOverride
+        : undefined,
   };
 }
 
@@ -138,6 +142,9 @@ export function ShopGateProvider({ children }: { children: ReactNode }) {
           const d = snap.data();
           setSubscription({
             plan: String(d.plan ?? 'trial'),
+            planId: d.planId ? String(d.planId) : undefined,
+            planName: d.planName ? String(d.planName) : undefined,
+            tier: d.tier === 'basic' || d.tier === 'pro' || d.tier === 'premium' ? d.tier : undefined,
             startsAt: millis(d.startsAt),
             expiresAt: millis(d.expiresAt),
             status: (d.status as SubscriptionDoc['status']) ?? 'trial',
@@ -244,11 +251,12 @@ export function ShopGateProvider({ children }: { children: ReactNode }) {
     [gate, status, accessMatrix, profile?.overrides, cloud],
   );
 
-  const openRenewWhatsApp = useCallback(() => {
-    const phone = appConfig.renewWhatsApp.replace(/\D/g, '');
-    if (!phone) return;
-    Linking.openURL(`https://wa.me/${phone}`);
-  }, [appConfig.renewWhatsApp]);
+const openRenewWhatsApp = useCallback((message?: unknown) => {
+  const phone = appConfig.renewWhatsApp.replace(/\D/g, '');
+  if (!phone) return;
+  const query = typeof message === 'string' && message ? `?text=${encodeURIComponent(message)}` : '';
+  Linking.openURL(`https://wa.me/${phone}${query}`);
+}, [appConfig.renewWhatsApp]);
 
   const dismissAnnouncement = useCallback(
     async (id: string, _kind: 'banner' | 'popup') => {

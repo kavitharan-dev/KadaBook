@@ -3,7 +3,7 @@
     "name": "KadaBook",
     "slug": "kadabook",
     "backgroundColor": "#E8F1FF",
-    "version": "1.0.2",
+    "version": "1.1.1.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -11,8 +11,8 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/4b2ae4ed-5767-4abb-b448-3508a63c30f6",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/5b5ed363-6013-43e8-b7a4-781000db2d75"
     },
     "splash": {
       "image": "./assets/splash.png",
@@ -28,11 +28,10 @@
     },
     "android": {
       "package": "com.kadabook.shop",
-      "versionCode": 9,
+      "versionCode": 16,
       "adaptiveIcon": {
-        "backgroundColor": "#E8F1FF",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
@@ -52,13 +51,15 @@
     "plugins": [
       "expo-font",
       "expo-sharing",
-      "expo-updates"
+      "expo-updates",
+      "expo-secure-store"
     ],
     "extra": {
-      "buildTag": "2026-10-29-calc-quick",
+      "buildTag": "ota-check-nov2-2145",
       "eas": {
-        "projectId": "4b2ae4ed-5767-4abb-b448-3508a63c30f6"
+        "projectId": "5b5ed363-6013-43e8-b7a4-781000db2d75"
       }
-    }
+    },
+    "owner": "tharan0813"
   }
 }

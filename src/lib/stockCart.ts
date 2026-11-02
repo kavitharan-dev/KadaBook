@@ -51,7 +51,12 @@ export function tryMergeCartLine(cart: SaleLine[], product: Product, qty: number
 }
 
 export function lowStockProducts(products: Product[], threshold = 5) {
-  return products.filter((p) => p.stock > 0 && p.stock <= threshold);
+  return products.filter((p) => p.stock > 0 && p.stock <= (p.reorderLevel && p.reorderLevel > 0 ? p.reorderLevel : threshold));
+}
+
+export function reorderQty(product: Product, threshold = 5) {
+  const level = product.reorderLevel && product.reorderLevel > 0 ? product.reorderLevel : threshold;
+  return Math.max(level - product.stock, level);
 }
 
 export function outOfStockProducts(products: Product[]) {

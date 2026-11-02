@@ -1,3 +1,5 @@
+import type { SaleExtras } from './saleExtras';
+
 export type SaleLine = {
   productId?: string;
   name: string;
@@ -14,13 +16,15 @@ export type Sale = {
   kind?: 'quick' | 'bill';
   items?: SaleLine[];
   settled?: boolean;
-};
+} & SaleExtras;
 
 export type Expense = {
   id: string;
   amount: number;
   category: string;
   createdAt: number;
+  note?: string;
+  branchId?: string;
 };
 
 export type Product = {
@@ -32,6 +36,68 @@ export type Product = {
   unit: string;
   category: string;
   barcode?: string;
+  reorderLevel?: number;
+  batchNo?: string;
+  expiry?: string;
+  createdAt: number;
+};
+
+export type Customer = {
+  id: string;
+  name: string;
+  phone: string;
+  note?: string;
+  points?: number;
+  createdAt: number;
+};
+
+export type CreditPayment = {
+  id: string;
+  customerId: string;
+  amount: number;
+  method: 'cash' | 'card';
+  note?: string;
+  createdAt: number;
+};
+
+export type Supplier = {
+  id: string;
+  name: string;
+  phone?: string;
+  payable: number;
+  createdAt: number;
+};
+
+export type StaffRole = 'owner' | 'manager' | 'cashier';
+
+/** A staff login. `id` is the staff member's own Firebase uid. */
+export type StaffMember = {
+  id: string;
+  name: string;
+  role: StaffRole;
+  /** Switched-off staff cannot sign in or read the shop. */
+  active: boolean;
+  /** Phone or email they sign in with, for the owner's list. */
+  login?: string;
+  createdAt: number;
+};
+
+export type SaleReturn = {
+  id: string;
+  saleId: string;
+  items: SaleLine[];
+  refundAmount: number;
+  method: 'cash' | 'card' | 'credit';
+  createdAt: number;
+};
+
+export type AuditEntry = {
+  id: string;
+  action: string;
+  detail: string;
+  actorUid?: string;
+  actorName?: string;
+  role?: StaffRole;
   createdAt: number;
 };
 
@@ -40,7 +106,14 @@ export type SavedOrder = {
   items: SaleLine[];
   total: number;
   savedAt: number;
+  /** Drafts: 'quick' holds calculator amounts, otherwise product lines. */
+  kind?: 'quick' | 'bill';
+  customerName?: string;
+  customerPhone?: string;
 };
+
+/** What a draft keeps besides its lines. */
+export type DraftInfo = Pick<SavedOrder, 'kind' | 'customerName' | 'customerPhone'>;
 
 export type BooksMeta = {
   nextInvoice: number;
@@ -54,14 +127,26 @@ export type Books = {
   expenses: Expense[];
   products: Product[];
   savedOrders: SavedOrder[];
+  customers: Customer[];
+  creditPayments: CreditPayment[];
+  suppliers: Supplier[];
+  staff: StaffMember[];
+  returns: SaleReturn[];
+  audit: AuditEntry[];
   meta: BooksMeta;
 };
 
 export type ShopUser = {
+  /** The shop id (the owner's uid). For staff this is their employer's shop, not their own uid. */
   uid: string;
   email: string;
   shopName: string;
   phone: string | null;
+  /** Missing means owner (also for phone-only shops without Firebase). */
+  role?: StaffRole;
+  /** Staff only: their own Firebase uid and name. */
+  authUid?: string;
+  staffName?: string;
 };
 
 export const EMPTY_BOOKS: Books = {
@@ -69,6 +154,12 @@ export const EMPTY_BOOKS: Books = {
   expenses: [],
   products: [],
   savedOrders: [],
+  customers: [],
+  creditPayments: [],
+  suppliers: [],
+  staff: [],
+  returns: [],
+  audit: [],
   meta: { nextInvoice: 1, openingBalances: {} },
 };
 
@@ -84,6 +175,9 @@ export type ProductInput = {
   unit: string;
   category: string;
   barcode?: string;
+  reorderLevel?: number;
+  batchNo?: string;
+  expiry?: string;
 };
 
 export type QuickSaleInput = {

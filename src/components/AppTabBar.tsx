@@ -3,21 +3,23 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useI18n } from '../context/LocaleContext';
 import { useTheme } from '../context/ThemeContext';
+import { useRole, type Permission } from '../lib/roles';
 import { HomeIcon, MoreIcon, ProductIcon, ReportIcon, SaleIcon } from './Icons';
 import { TabBarIcon } from './TabBarIcon';
 
-const TABS = [
-  { name: 'Home', key: 'home' as const, Icon: HomeIcon },
-  { name: 'Sales', key: 'sales' as const, Icon: SaleIcon },
-  { name: 'Products', key: 'products' as const, Icon: ProductIcon },
-  { name: 'Reports', key: 'reports' as const, Icon: ReportIcon },
-  { name: 'More', key: 'more' as const, Icon: MoreIcon },
-] as const;
+const TABS: { name: string; key: 'home' | 'sales' | 'products' | 'reports' | 'more'; Icon: typeof HomeIcon; needs?: Permission }[] = [
+  { name: 'Home', key: 'home', Icon: HomeIcon },
+  { name: 'Sales', key: 'sales', Icon: SaleIcon },
+  { name: 'Products', key: 'products', Icon: ProductIcon, needs: 'manageProducts' },
+  { name: 'Reports', key: 'reports', Icon: ReportIcon, needs: 'viewReports' },
+  { name: 'More', key: 'more', Icon: MoreIcon },
+];
 
 export function AppTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
   const { colors } = useTheme();
+  const { can } = useRole();
   const bottomPad = Math.max(insets.bottom, 4);
 
   return (
@@ -33,6 +35,8 @@ export function AppTabBar({ state, navigation }: BottomTabBarProps) {
       ]}
     >
       {TABS.map((tab, index) => {
+        // Cashiers do not get the Products and Reports tabs.
+        if (tab.needs && !can(tab.needs)) return null;
         const active = state.index === index;
         const color = active ? colors.brand : colors.muted;
         return (

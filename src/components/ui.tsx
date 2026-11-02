@@ -39,8 +39,10 @@ export function Header({
       ) : (
         <View style={styles.iconButton} />
       )}
-      <Text style={[styles.headerTitle, { color: colors.ink }]}>{title}</Text>
-      <View style={styles.iconButton}>{right}</View>
+      <Text style={[styles.headerTitle, { color: colors.ink }]} numberOfLines={1}>
+        {title}
+      </Text>
+      <View style={styles.headerEnd}>{right}</View>
     </View>
   );
 }
@@ -129,6 +131,12 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEnd: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
   headerTitle: {

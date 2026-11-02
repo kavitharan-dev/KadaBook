@@ -1,10 +1,18 @@
 import type { SignUpInput } from './signUpTypes';
+import type { ExpenseExtras, SaleExtras } from './saleExtras';
 import type {
+  AuditEntry,
   BillCheckoutInput,
   Books,
+  CreditPayment,
+  Customer,
+  DraftInfo,
   ProductInput,
   QuickSaleInput,
+  SaleReturn,
   ShopUser,
+  StaffMember,
+  Supplier,
 } from './types';
 
 export type Repository = {
@@ -13,18 +21,27 @@ export type Repository = {
     onData: (books: Books) => void,
     onError?: (message: string) => void,
   ): () => void;
-  addQuickSale(uid: string, input: QuickSaleInput): Promise<void>;
-  checkoutBill(uid: string, input: BillCheckoutInput): Promise<void>;
+  addQuickSale(uid: string, input: QuickSaleInput & SaleExtras): Promise<void>;
+  checkoutBill(uid: string, input: BillCheckoutInput & SaleExtras): Promise<void>;
   deleteSale(uid: string, id: string): Promise<void>;
-  addExpense(uid: string, amount: number, category: string): Promise<void>;
+  addExpense(uid: string, amount: number, category: string, extra?: ExpenseExtras): Promise<void>;
   deleteExpense(uid: string, id: string): Promise<void>;
   addProduct(uid: string, input: ProductInput): Promise<void>;
   deleteProduct(uid: string, id: string): Promise<void>;
-  saveOrder(uid: string, items: BillCheckoutInput['items']): Promise<void>;
+  updateProduct(uid: string, id: string, input: ProductInput): Promise<void>;
+  saveOrder(uid: string, items: BillCheckoutInput['items'], info?: DraftInfo): Promise<void>;
   deleteSavedOrder(uid: string, id: string): Promise<void>;
   updateShopName(uid: string, shopName: string): Promise<void>;
   setOpeningBalance(uid: string, dayKey: string, amount: number): Promise<void>;
   addCustomExpenseCategory(uid: string, name: string): Promise<string>;
+  updateSale(uid: string, id: string, patch: { note?: string; customerName?: string; customerPhone?: string; paymentMode?: SaleExtras['paymentMode']; editedAt?: number; createdAt?: number }): Promise<void>;
+  addCustomer(uid: string, input: { name: string; phone: string; note?: string }): Promise<string>;
+  addCreditPayment(uid: string, input: Omit<CreditPayment, 'id' | 'createdAt'>): Promise<void>;
+  addSupplier(uid: string, input: { name: string; phone?: string; payable: number }): Promise<void>;
+  addStaff(uid: string, input: { name: string; role: StaffMember['role'] }): Promise<void>;
+  addAudit(uid: string, input: Omit<AuditEntry, 'id' | 'createdAt'> & { actorUid: string }): Promise<void>;
+  addReturn(uid: string, input: Omit<SaleReturn, 'id' | 'createdAt'>): Promise<void>;
+  importProducts(uid: string, rows: ProductInput[]): Promise<number>;
 };
 
 export type AuthService = {

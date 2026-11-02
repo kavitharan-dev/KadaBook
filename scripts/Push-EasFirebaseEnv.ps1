@@ -1,4 +1,4 @@
-﻿# Push EXPO_PUBLIC_FIREBASE_* from local .env to EAS "preview" (for APK builds).
+﻿# Push EXPO_PUBLIC_FIREBASE_* from local .env to EAS preview and production.
 # Run once before: npm run build
 
 $ErrorActionPreference = "Stop"
@@ -19,8 +19,10 @@ Get-Content $envFile | ForEach-Object {
   $value = $Matches[2].Trim().Trim('"').Trim("'")
   if (-not $value) { return }
   $names += $name
-  Write-Host "EAS preview: $name"
-  npx eas env:create --environment preview --name $name --value $value --visibility plaintext --force
+  foreach ($environment in @("preview", "production")) {
+    Write-Host "EAS ${environment}: $name"
+    npx eas env:create --environment $environment --name $name --value $value --visibility plaintext --force --non-interactive
+  }
 }
 
 if ($names.Count -eq 0) {

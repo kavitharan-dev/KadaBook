@@ -18,7 +18,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<ShopUser | null>(null);
-  const [ready, setReady] = useState(true);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const timer = setTimeout(() => {
       if (!cancelled) setReady(true);
-    }, 2500);
+    }, 4000);
 
     return () => {
       cancelled = true;

@@ -1,9 +1,10 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
   getAuth,
+  inMemoryPersistence,
   initializeAuth,
   onAuthStateChanged,
   sendPasswordResetEmail,
@@ -29,14 +30,17 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
+  writeBatch,
   type Firestore,
-  type Timestamp,
 } from 'firebase/firestore';
 import { accountIdentity, assertPassword, isPhoneAuthEmail, type AuthService, type Repository } from '../data/repository';
 import type { SignUpInput } from '../data/signUpTypes';
-import type { Expense, Product, Sale, SaleLine, SavedOrder, ShopUser } from '../data/types';
+import type { Books, Expense, Product, Sale, SaleLine, SaleReturn, SavedOrder, ShopUser, StaffMember, StaffRole } from '../data/types';
+import { type PaymentMode, type SaleDiscount, type SaleExtras } from '../data/saleExtras';
 import { normalizeBooks } from '../lib/booksNormalize';
+import { fifoSettledIds } from '../lib/shopPlus';
 import { expenseCategoriesForShop, normalizeCustomExpenseCategory } from '../lib/expenseCategories';
 import {
   assertBillItems,
@@ -44,6 +48,8 @@ import {
   billTotal,
   buildBillSale,
   buildQuickSale,
+  chargedAmount,
+  draftFields,
 } from '../lib/saleOps';
 
 const firebaseConfig = {
@@ -72,6 +78,11 @@ export function firebaseProjectId() {
 /** Shared Firestore instance for gate/access listeners. */
 export function getFirestoreDb() {
   return firestore();
+}
+
+/** For Cloud Functions calls (AI assistant, voice billing). */
+export function getFirebaseApp() {
+  return firebaseApp();
 }
 
 let app: FirebaseApp | null = null;
@@ -167,13 +178,53 @@ async function readProfile(uid: string, fallbackEmail: string): Promise<ShopUser
   };
 }
 
+type StaffLink = { shopUid: string; role: StaffRole; name: string; active: boolean };
+
+/** If this account is a staff login, the shop it belongs to and its role. */
+async function readStaffLink(authUid: string): Promise<StaffLink | null> {
+  const index = await getDoc(doc(firestore(), 'staffIndex', authUid));
+  const shopUid = index.data()?.shopUid;
+  if (typeof shopUid !== 'string' || !shopUid) return null;
+  const member = await getDoc(doc(firestore(), 'users', shopUid, 'members', authUid));
+  const data = member.data();
+  if (!data) return null;
+  return {
+    shopUid,
+    role: data.role === 'manager' ? 'manager' : 'cashier',
+    name: typeof data.name === 'string' ? data.name : 'Staff',
+    active: data.active === true,
+  };
+}
+
+async function staffProfile(authUid: string, email: string, link: StaffLink): Promise<ShopUser> {
+  const shop = await readProfile(link.shopUid, email);
+  return { ...shop, email, role: link.role, authUid, staffName: link.name };
+}
+
+const STAFF_OFF = 'Your staff login is switched off. Ask the shop owner to turn it back on.';
+
 export const cloudAuth: AuthService = {
   cloud: true,
   subscribe(onUser) {
-    return onAuthStateChanged(firebaseAuth(), (user) => {
+    return onAuthStateChanged(firebaseAuth(), async (user) => {
       if (!user) {
         onUser(null);
         return;
+      }
+      // Staff must never be shown as the owner of an empty shop, so check this first.
+      try {
+        const link = await readStaffLink(user.uid);
+        if (link) {
+          if (!link.active) {
+            await firebaseSignOut(firebaseAuth());
+            onUser(null);
+            return;
+          }
+          onUser(await staffProfile(user.uid, user.email ?? '', link));
+          return;
+        }
+      } catch {
+        // Offline with no cache: fall through to the owner profile.
       }
       onUser({
         uid: user.uid,
@@ -198,6 +249,14 @@ export const cloudAuth: AuthService = {
     const { email } = accountIdentity(identity);
     try {
       const cred = await signInWithEmailAndPassword(firebaseAuth(), email, password);
+      const link = await readStaffLink(cred.user.uid).catch(() => null);
+      if (link) {
+        if (!link.active) {
+          await firebaseSignOut(firebaseAuth());
+          throw new Error(STAFF_OFF);
+        }
+        return staffProfile(cred.user.uid, email, link);
+      }
       const profile = await readProfile(cred.user.uid, email);
       await setDoc(
         doc(firestore(), 'users', cred.user.uid),
@@ -295,6 +354,45 @@ function watchCollection<T>(
   );
 }
 
+function readDiscount(raw: unknown): SaleDiscount | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const row = raw as Record<string, unknown>;
+  const type = row.type === 'percent' ? 'percent' : row.type === 'amount' ? 'amount' : undefined;
+  const value = Number(row.value);
+  const amount = Number(row.amount);
+  if (!type || !Number.isFinite(amount) || amount <= 0) return undefined;
+  return { type, value: Number.isFinite(value) ? value : amount, amount };
+}
+
+function readPayment(raw: unknown): PaymentMode | undefined {
+  return raw === 'cash' || raw === 'card' || raw === 'credit' ? raw : undefined;
+}
+
+function readSaleExtras(data: Record<string, unknown>): SaleExtras {
+  const extras: SaleExtras = {};
+  const paymentMode = readPayment(data.paymentMode);
+  const discount = readDiscount(data.discount);
+  if (paymentMode) extras.paymentMode = paymentMode;
+  if (discount) extras.discount = discount;
+  if (Number(data.subtotal) > 0) extras.subtotal = Number(data.subtotal);
+  if (typeof data.customerName === 'string' && data.customerName) extras.customerName = data.customerName;
+  if (typeof data.customerPhone === 'string' && data.customerPhone) extras.customerPhone = data.customerPhone;
+  if (typeof data.customerId === 'string' && data.customerId) extras.customerId = data.customerId;
+  if (typeof data.note === 'string' && data.note) extras.note = data.note;
+  if (Number(data.paidAmount) > 0) extras.paidAmount = Number(data.paidAmount);
+  if (data.editedAt != null) extras.editedAt = millis(data.editedAt);
+  if (typeof data.branchId === 'string' && data.branchId) extras.branchId = data.branchId;
+  return extras;
+}
+
+function stamp(createdAt?: number) {
+  return createdAt ? Timestamp.fromMillis(createdAt) : serverTimestamp();
+}
+
+function defined(row: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined));
+}
+
 function mapSale(id: string, data: Record<string, unknown>): Sale {
   const items = Array.isArray(data.items)
     ? (data.items as SaleLine[]).map((line) => ({
@@ -313,6 +411,7 @@ function mapSale(id: string, data: Record<string, unknown>): Sale {
     kind: data.kind === 'bill' || data.kind === 'quick' ? data.kind : undefined,
     items,
     settled: data.settled !== false,
+    ...readSaleExtras(data),
   };
 }
 
@@ -327,6 +426,9 @@ function mapProduct(id: string, data: Record<string, unknown>): Product {
     unit: typeof data.unit === 'string' ? data.unit : 'pcs',
     category: typeof data.category === 'string' ? data.category : 'General',
     barcode: typeof data.barcode === 'string' ? data.barcode : undefined,
+    reorderLevel: data.reorderLevel != null ? Number(data.reorderLevel) : undefined,
+    batchNo: typeof data.batchNo === 'string' ? data.batchNo : undefined,
+    expiry: typeof data.expiry === 'string' ? data.expiry : undefined,
     createdAt: millis(data.createdAt),
   };
 }
@@ -360,6 +462,12 @@ export const cloudRepository: Repository = {
     let expenses: Expense[] = [];
     let products: Product[] = [];
     let savedOrders: SavedOrder[] = [];
+    let customers: Books['customers'] = [];
+    let creditPayments: Books['creditPayments'] = [];
+    let suppliers: Books['suppliers'] = [];
+    let staff: Books['staff'] = [];
+    let returns: Books['returns'] = [];
+    let audit: Books['audit'] = [];
     let nextInvoice = 1;
     let openingBalances: Record<string, number> = {};
     let customExpenseCategories: string[] = [];
@@ -371,6 +479,12 @@ export const cloudRepository: Repository = {
           expenses,
           products,
           savedOrders,
+          customers,
+          creditPayments,
+          suppliers,
+          staff,
+          returns,
+          audit,
           meta: { nextInvoice, openingBalances, customExpenseCategories },
         }),
       );
@@ -415,6 +529,8 @@ export const cloudRepository: Repository = {
         amount: Number(data.amount) || 0,
         category: typeof data.category === 'string' ? data.category : 'Other',
         createdAt: millis(data.createdAt),
+        note: typeof data.note === 'string' ? data.note : undefined,
+        branchId: typeof data.branchId === 'string' ? data.branchId : undefined,
       }),
       (rows) => {
         expenses = rows;
@@ -439,6 +555,11 @@ export const cloudRepository: Repository = {
             items,
             total: Number(data.total) || billTotal(items),
             savedAt: millis(data.savedAt),
+            ...draftFields({
+              kind: data.kind === 'quick' ? 'quick' : data.kind === 'bill' ? 'bill' : undefined,
+              customerName: typeof data.customerName === 'string' ? data.customerName : undefined,
+              customerPhone: typeof data.customerPhone === 'string' ? data.customerPhone : undefined,
+            }),
           };
         });
         push();
@@ -446,23 +567,106 @@ export const cloudRepository: Repository = {
       (error) => fail(error.message),
     );
 
+    const listen = <T,>(name: string, map: (id: string, data: Record<string, unknown>) => T, set: (rows: T[]) => void) =>
+      watchCollection(uid, name, map, (rows) => {
+        set(rows);
+        push();
+      }, fail);
+
+    const unsubCustomers = listen('customers', (id, data) => ({
+      id,
+      name: String(data.name ?? ''),
+      phone: String(data.phone ?? ''),
+      note: typeof data.note === 'string' ? data.note : undefined,
+      points: Number(data.points) || 0,
+      createdAt: millis(data.createdAt),
+    }), (rows) => {
+      customers = rows;
+    });
+    const unsubPayments = listen('creditPayments', (id, data) => ({
+      id,
+      customerId: String(data.customerId ?? ''),
+      amount: Number(data.amount) || 0,
+      method: data.method === 'card' ? 'card' as const : 'cash' as const,
+      note: typeof data.note === 'string' ? data.note : undefined,
+      createdAt: millis(data.createdAt),
+    }), (rows) => {
+      creditPayments = rows;
+    });
+    const unsubSuppliers = listen('suppliers', (id, data) => ({
+      id,
+      name: String(data.name ?? ''),
+      phone: typeof data.phone === 'string' ? data.phone : undefined,
+      payable: Number(data.payable) || 0,
+      createdAt: millis(data.createdAt),
+    }), (rows) => {
+      suppliers = rows;
+    });
+    // Staff logins (users/{shop}/members/{staffUid}).
+    const unsubStaff = listen('members', (id, data) => ({
+      id,
+      name: String(data.name ?? ''),
+      role: (data.role === 'manager' ? 'manager' : 'cashier') as StaffMember['role'],
+      active: data.active === true,
+      login: typeof data.login === 'string' ? data.login : undefined,
+      createdAt: millis(data.createdAt),
+    }), (rows) => {
+      staff = rows;
+    });
+    const unsubReturns = listen('returns', (id, data) => ({
+      id,
+      saleId: String(data.saleId ?? ''),
+      items: Array.isArray(data.items) ? (data.items as SaleLine[]) : [],
+      refundAmount: Number(data.refundAmount) || 0,
+      method: (data.method === 'card' || data.method === 'credit' ? data.method : 'cash') as SaleReturn['method'],
+      createdAt: millis(data.createdAt),
+    }), (rows) => {
+      returns = rows;
+    });
+    const unsubAudit = listen('audit', (id, data) => ({
+      id,
+      action: String(data.action ?? ''),
+      detail: String(data.detail ?? ''),
+      actorUid: typeof data.actorUid === 'string' ? data.actorUid : undefined,
+      actorName: typeof data.actorName === 'string' ? data.actorName : undefined,
+      role: (data.role === 'manager' || data.role === 'cashier' ? data.role : 'owner') as StaffMember['role'],
+      createdAt: millis(data.createdAt),
+    }), (rows) => {
+      audit = rows;
+    });
+
     return () => {
       unsubProfile();
       unsubSales();
       unsubExpenses();
       unsubProducts();
       unsubSaved();
+      unsubCustomers();
+      unsubPayments();
+      unsubSuppliers();
+      unsubStaff();
+      unsubReturns();
+      unsubAudit();
     };
   },
   async addQuickSale(uid, input) {
     const invoiceNo = await allocateInvoice(uid);
     const items = input.items?.length ? input.items : undefined;
-    const amount = items ? billTotal(items) : input.amount;
-    const payload = buildQuickSale(amount, invoiceNo, items);
-    await addDoc(collection(firestore(), 'users', uid, 'sales'), {
-      ...payload,
-      createdAt: serverTimestamp(),
-    });
+    const subtotal = items ? billTotal(items) : input.amount;
+    const priced = chargedAmount(subtotal, input.discount?.amount ?? 0);
+    const { createdAt, ...extras } = input;
+    const payload = buildQuickSale(priced.amount, invoiceNo, items);
+    await addDoc(
+      collection(firestore(), 'users', uid, 'sales'),
+      defined({
+        ...payload,
+        ...extras,
+        subtotal: priced.subtotal,
+        amount: priced.amount,
+        settled: input.paymentMode === 'credit' ? false : true,
+        createdAt: stamp(createdAt),
+      }),
+    );
   },
   async checkoutBill(uid, input) {
     assertBillItems(input.items);
@@ -470,21 +674,35 @@ export const cloudRepository: Repository = {
     const products = productDocs.docs.map((d) => mapProduct(d.id, d.data() as Record<string, unknown>));
     const invoiceNo = await allocateInvoice(uid);
     await applyStockUpdates(uid, input.items, products);
+    const priced = chargedAmount(billTotal(input.items), input.discount?.amount ?? 0);
+    const { createdAt, ...extras } = input;
     const payload = buildBillSale(input.items, invoiceNo);
-    await addDoc(collection(firestore(), 'users', uid, 'sales'), {
-      ...payload,
-      createdAt: serverTimestamp(),
-    });
+    await addDoc(
+      collection(firestore(), 'users', uid, 'sales'),
+      defined({
+        ...payload,
+        ...extras,
+        subtotal: priced.subtotal,
+        amount: priced.amount,
+        settled: input.paymentMode === 'credit' ? false : true,
+        createdAt: stamp(createdAt),
+      }),
+    );
   },
   async deleteSale(uid, id) {
     await deleteDoc(doc(firestore(), 'users', uid, 'sales', id));
   },
-  async addExpense(uid, amount, category) {
-    await addDoc(collection(firestore(), 'users', uid, 'expenses'), {
-      amount,
-      category,
-      createdAt: serverTimestamp(),
-    });
+  async addExpense(uid, amount, category, extra) {
+    await addDoc(
+      collection(firestore(), 'users', uid, 'expenses'),
+      defined({
+        amount,
+        category,
+        note: extra?.note,
+        branchId: extra?.branchId,
+        createdAt: stamp(extra?.createdAt),
+      }),
+    );
   },
   async deleteExpense(uid, id) {
     await deleteDoc(doc(firestore(), 'users', uid, 'expenses', id));
@@ -498,18 +716,40 @@ export const cloudRepository: Repository = {
       unit: input.unit.trim() || 'pcs',
       category: input.category.trim() || 'General',
       barcode: input.barcode?.trim() ?? null,
+      reorderLevel: input.reorderLevel,
+      batchNo: input.batchNo?.trim() || null,
+      expiry: input.expiry?.trim() || null,
       createdAt: serverTimestamp(),
     });
   },
   async deleteProduct(uid, id) {
     await deleteDoc(doc(firestore(), 'users', uid, 'products', id));
   },
-  async saveOrder(uid, items) {
+  async updateProduct(uid, id, input) {
+    await setDoc(
+      doc(firestore(), 'users', uid, 'products', id),
+      {
+        name: input.name.trim(),
+        sellingPrice: Math.round(input.sellingPrice),
+        purchasePrice: Math.round(input.purchasePrice),
+        stock: input.stock,
+        unit: input.unit.trim() || 'pcs',
+        category: input.category.trim() || 'General',
+        ...(input.barcode !== undefined ? { barcode: input.barcode.trim() || null } : {}),
+        ...(input.reorderLevel !== undefined ? { reorderLevel: input.reorderLevel } : {}),
+        ...(input.batchNo !== undefined ? { batchNo: input.batchNo.trim() || null } : {}),
+        ...(input.expiry !== undefined ? { expiry: input.expiry.trim() || null } : {}),
+      },
+      { merge: true },
+    );
+  },
+  async saveOrder(uid, items, info) {
     assertBillItems(items);
     await addDoc(collection(firestore(), 'users', uid, 'savedOrders'), {
       items,
       total: billTotal(items),
       savedAt: serverTimestamp(),
+      ...draftFields(info),
     });
   },
   async deleteSavedOrder(uid, id) {
@@ -545,4 +785,176 @@ export const cloudRepository: Repository = {
     );
     return label;
   },
+  async updateSale(uid, id, patch) {
+    await updateDoc(
+      doc(firestore(), 'users', uid, 'sales', id),
+      defined({
+        ...patch,
+        createdAt: patch.createdAt ? Timestamp.fromMillis(patch.createdAt) : undefined,
+        editedAt: Date.now(),
+      }),
+    );
+  },
+  async addCustomer(uid, input) {
+    const ref = await addDoc(collection(firestore(), 'users', uid, 'customers'), {
+      name: input.name.trim(),
+      phone: input.phone.trim(),
+      note: input.note?.trim() || null,
+      points: 0,
+      createdAt: serverTimestamp(),
+    });
+    return ref.id;
+  },
+  async addCreditPayment(uid, input) {
+    const [salesSnap, paidSnap] = await Promise.all([
+      getDocs(collection(firestore(), 'users', uid, 'sales')),
+      getDocs(collection(firestore(), 'users', uid, 'creditPayments')),
+    ]);
+    const mine = salesSnap.docs
+      .map((item) => mapSale(item.id, item.data() as Record<string, unknown>))
+      .filter((sale) => sale.customerId === input.customerId && sale.paymentMode === 'credit');
+    const collected =
+      paidSnap.docs
+        .map((item) => item.data() as Record<string, unknown>)
+        .filter((row) => row.customerId === input.customerId)
+        .reduce((sum, row) => sum + (Number(row.amount) || 0), 0) + input.amount;
+    const cleared = new Set(fifoSettledIds(mine, collected));
+    const batch = writeBatch(firestore());
+    for (const sale of mine) {
+      if (cleared.has(sale.id) && sale.settled === false) {
+        batch.update(doc(firestore(), 'users', uid, 'sales', sale.id), { settled: true });
+      }
+    }
+    const pay = doc(collection(firestore(), 'users', uid, 'creditPayments'));
+    batch.set(pay, defined({
+      customerId: input.customerId,
+      amount: input.amount,
+      method: input.method,
+      note: input.note,
+      createdAt: serverTimestamp(),
+    }));
+    await batch.commit();
+  },
+  async addSupplier(uid, input) {
+    await addDoc(collection(firestore(), 'users', uid, 'suppliers'), {
+      name: input.name.trim(),
+      phone: input.phone?.trim() || null,
+      payable: Math.round(input.payable),
+      createdAt: serverTimestamp(),
+    });
+  },
+  async addStaff(uid, input) {
+    await addDoc(collection(firestore(), 'users', uid, 'staff'), {
+      name: input.name.trim(),
+      role: input.role,
+      createdAt: serverTimestamp(),
+    });
+  },
+  async addAudit(uid, input) {
+    await addDoc(collection(firestore(), 'users', uid, 'audit'), defined({
+      action: input.action.slice(0, 60),
+      detail: input.detail.slice(0, 300),
+      actorUid: input.actorUid,
+      actorName: input.actorName?.slice(0, 60),
+      role: input.role,
+      createdAt: serverTimestamp(),
+    }));
+  },
+  async addReturn(uid, input) {
+    const batch = writeBatch(firestore());
+    const ref = doc(collection(firestore(), 'users', uid, 'returns'));
+    batch.set(ref, { ...input, createdAt: serverTimestamp() });
+    for (const line of input.items) {
+      if (!line.productId) continue;
+      const snap = await getDoc(doc(firestore(), 'users', uid, 'products', line.productId));
+      const stock = Number(snap.data()?.stock) || 0;
+      batch.update(doc(firestore(), 'users', uid, 'products', line.productId), { stock: stock + line.qty });
+    }
+    await batch.commit();
+  },
+  async importProducts(uid, rows) {
+    let count = 0;
+    for (let i = 0; i < rows.length; i += 400) {
+      const batch = writeBatch(firestore());
+      rows.slice(i, i + 400).forEach((input) => {
+        const ref = doc(collection(firestore(), 'users', uid, 'products'));
+        batch.set(ref, {
+          name: input.name.trim(),
+          sellingPrice: Math.round(input.sellingPrice),
+          purchasePrice: Math.round(input.purchasePrice),
+          stock: input.stock,
+          unit: input.unit.trim() || 'pcs',
+          category: input.category.trim() || 'General',
+          barcode: input.barcode?.trim() || null,
+          reorderLevel: input.reorderLevel ?? 5,
+          createdAt: serverTimestamp(),
+        });
+        count += 1;
+      });
+      await batch.commit();
+    }
+    return count;
+  },
 };
+
+/* ------------------------------------------------------------------ */
+/* Staff logins (owner only)                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A second Firebase app just for creating staff accounts. Creating a user signs that user in,
+ * so doing it here keeps the owner signed in on the main app.
+ */
+function staffCreatorAuth() {
+  const name = 'kadabook-staff-creator';
+  const existing = getApps().find((a) => a.name === name);
+  const secondary = existing ?? initializeApp(firebaseConfig, name);
+  try {
+    return initializeAuth(secondary, { persistence: inMemoryPersistence });
+  } catch {
+    return getAuth(secondary);
+  }
+}
+
+export async function createStaffAccount(
+  shopUid: string,
+  input: { name: string; identity: string; password: string; role: Exclude<StaffRole, 'owner'> },
+) {
+  const name = input.name.trim().slice(0, 60);
+  if (!name) throw new Error('Enter the name of the staff member.');
+  assertPassword(input.password);
+  const { email, phone } = accountIdentity(input.identity);
+  const creator = staffCreatorAuth();
+  let staffUid: string;
+  try {
+    const cred = await createUserWithEmailAndPassword(creator, email, input.password);
+    staffUid = cred.user.uid;
+  } catch (error) {
+    throw friendlyAuthError(error);
+  } finally {
+    await firebaseSignOut(creator).catch(() => undefined);
+  }
+  const batch = writeBatch(firestore());
+  batch.set(doc(firestore(), 'users', shopUid, 'members', staffUid), {
+    name,
+    role: input.role,
+    active: true,
+    login: phone ?? email,
+    createdAt: serverTimestamp(),
+  });
+  batch.set(doc(firestore(), 'staffIndex', staffUid), { shopUid });
+  await batch.commit();
+  return staffUid;
+}
+
+export async function updateStaffMember(
+  shopUid: string,
+  staffUid: string,
+  patch: { role?: Exclude<StaffRole, 'owner'>; active?: boolean; name?: string },
+) {
+  const ref = doc(firestore(), 'users', shopUid, 'members', staffUid);
+  const snap = await getDoc(ref);
+  const current = snap.data();
+  if (!current) throw new Error('That staff member was not found.');
+  await setDoc(ref, { ...current, ...defined(patch) });
+}

@@ -1,6 +1,8 @@
 import { AppLoading } from '../components/AppLoading';
 import { AnnouncementPopupHost } from '../components/GateModals';
+import { PinLockGate } from '../components/PinLockGate';
 import { BooksProvider } from '../context/BooksContext';
+import { KitchenProvider } from '../context/KitchenContext';
 import { ShopGateProvider, useShopGate } from '../context/ShopGateContext';
 import { useI18n } from '../context/LocaleContext';
 import {
@@ -25,16 +27,22 @@ function ShopGateRoot() {
   if (gate === 'suspended') return <SuspendedGateScreen />;
   return (
     <BooksProvider>
-      <AnnouncementPopupHost />
-      <AuthenticatedAppStack />
+      <KitchenProvider>
+        <AnnouncementPopupHost />
+        <AuthenticatedAppStack />
+      </KitchenProvider>
     </BooksProvider>
   );
 }
 
 export function AuthenticatedTree() {
+  // The account check runs in ShopGateProvider while the PIN screen is shown,
+  // so there is no "Checking your account" screen after the PIN.
   return (
     <ShopGateProvider>
-      <ShopGateRoot />
+      <PinLockGate>
+        <ShopGateRoot />
+      </PinLockGate>
     </ShopGateProvider>
   );
 }

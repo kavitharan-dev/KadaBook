@@ -1,4 +1,4 @@
-import type { BillCheckoutInput, Books, Sale, SaleLine } from '../data/types';
+import type { BillCheckoutInput, Books, DraftInfo, Sale, SaleLine } from '../data/types';
 
 export function lineTotal(qty: number, unitPrice: number) {
   return Math.round(qty * unitPrice);
@@ -6,6 +6,24 @@ export function lineTotal(qty: number, unitPrice: number) {
 
 export function billTotal(items: SaleLine[]) {
   return items.reduce((sum, line) => sum + line.lineTotal, 0);
+}
+
+/** One place for the amount the customer pays. Discount is applied here only. */
+export function chargedAmount(subtotal: number, discountRs = 0) {
+  const base = Math.max(0, Math.round(subtotal));
+  const off = Math.min(base, Math.max(0, Math.round(discountRs)));
+  return { subtotal: base, discount: off, amount: base - off };
+}
+
+/** Only the draft fields that are set (Firestore rejects undefined values). */
+export function draftFields(info?: DraftInfo): DraftInfo {
+  const out: DraftInfo = {};
+  if (info?.kind) out.kind = info.kind;
+  const name = info?.customerName?.trim().slice(0, 60);
+  if (name) out.customerName = name;
+  const phone = info?.customerPhone?.trim().slice(0, 20);
+  if (phone) out.customerPhone = phone;
+  return out;
 }
 
 export function assertBillItems(items: SaleLine[]) {

@@ -1,21 +1,31 @@
-import { useMemo, useState, useEffect } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Keyboard, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AmountPad } from '../components/AmountPad';
+import { CalculatorPad as AmountPad } from '../components/CalculatorPad';
+import { SaleExtrasPanel, EMPTY_EXTRAS, buildExtras, extrasTotals, type SaleExtrasState } from '../components/SaleExtrasPanel';
 import { TodaySalesHistory } from '../components/TodaySalesHistory';
+import { CartLineRow } from '../components/CartLineRow';
+import { SaleCheckoutModal } from '../components/SaleCheckoutModal';
+import { Toast, useToast } from '../components/Toast';
+import { ProductTile } from '../components/ProductTile';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import { AccessBlockedModal } from '../components/GateModals';
 import { useAuth } from '../context/AuthContext';
 import { useShopGate } from '../context/ShopGateContext';
 import { useBooks } from '../context/BooksContext';
+import { useKitchen } from '../context/KitchenContext';
 import { useI18n } from '../context/LocaleContext';
-import type { Product, SaleLine } from '../data/types';
+import { discountAmount } from '../data/saleExtras';
+import type { DraftInfo, Product, SaleLine, SavedOrder } from '../data/types';
 import { productSellingPrice } from '../lib/booksNormalize';
-import { formatRs } from '../lib/format';
+import { formatRs, formatTime } from '../lib/format';
 import { closeToDashboard } from '../lib/navigation';
+import { printOrShareReceipt } from '../lib/printReceipt';
 import { billTotal } from '../lib/saleOps';
+import { customerBalance } from '../lib/shopPlus';
 import { useResponsive } from '../lib/useResponsive';
+import { usePrintFeedback } from '../lib/usePrintFeedback';
 import { useTheme } from '../context/ThemeContext';
 import { tryMergeCartLine } from '../lib/stockCart';
 import type { AppStackParamList } from '../navigation/types';
@@ -49,10 +59,19 @@ export function NewSaleScreen() {
   const { user } = useAuth();
   const { canAccess } = useShopGate();
   const [blockedOpen, setBlockedOpen] = useState(false);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { books, addQuickSale, checkoutBill, saveOrder, deleteSavedOrder } = useBooks();
   const { colors } = useTheme();
+  const kitchen = useKitchen();
   const { contentMaxWidth, padX, keySize } = useResponsive();
+
+  // The keyboard can cover the payment / discount / customer fields (no auto-resize on newer Android),
+  // so pad the list by the keyboard height and scroll the form into view.
+  const scrollRef = useRef<any>(null);
+  const [kbHeight, setKbHeight] = useState(0);
+  const modeRef = useRef<SaleMode>('quick');
+  const printFx = usePrintFeedback();
+  const toast = useToast();
   const [mode, setMode] = useState<SaleMode>('quick');
   const [amount, setAmount] = useState('');
   const [calcStack, setCalcStack] = useState<number[]>([]);
@@ -61,11 +80,32 @@ export function NewSaleScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<SaleLine[]>([]);
+  const [extras, setExtras] = useState<SaleExtrasState>(EMPTY_EXTRAS);
+  const [justSavedAt, setJustSavedAt] = useState<number | null>(null);
+  // Customer / payment popup, then the bill once saved.
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  // Every feature is on for now. The plan split comes last.
+  const allow = { pay: true, discount: true, customer: true };
+
+  // Existing customers for the phone / name suggestions, with what each one still owes.
+  const customerOptions = useMemo(
+    () =>
+      books.customers.map((c) => ({ name: c.name, phone: c.phone, due: customerBalance(books, c.id) })),
+    [books],
+  );
 
   const cartTotal = billTotal(cart);
   const calcStackTotal = calcStack.reduce((a, b) => a + b, 0);
   const padAmount = Math.round(Number(amount) || 0);
-  const saveTotal = calcStack.length > 0 ? calcStackTotal : padAmount;
+  // Numbers already added with "+" plus the number still being typed.
+  const saveTotal = calcStackTotal + padAmount;
+  const subtotal = mode === 'quick' ? saveTotal : cartTotal;
+  const baseExtras = buildExtras(extras, allow, subtotal);
+  // Kitchen & Stock: every sale carries the branch it was made at.
+  const extrasInput = kitchen.activeBranchId ? { ...baseExtras, branchId: kitchen.activeBranchId } : baseExtras;
+  const off = discountAmount(subtotal, extrasInput?.discount);
+  const cartToPay = Math.max(0, cartTotal - off);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -78,9 +118,39 @@ export function NewSaleScreen() {
     );
   }, [books.products, search]);
 
+  // The sale that was just saved, once it shows up in the books (for "Print receipt").
+  const lastSale = useMemo(() => {
+    if (justSavedAt === null) return null;
+    return (
+      books.sales
+        .filter((sale) => sale.createdAt >= justSavedAt)
+        .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null
+    );
+  }, [books.sales, justSavedAt]);
+
   useEffect(() => {
     if (!canAccess('addSale')) setBlockedOpen(true);
   }, [canAccess]);
+
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  useEffect(() => {
+    const ios = Platform.OS === 'ios';
+    const show = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', (e) => {
+      setKbHeight(e.endCoordinates.height);
+      // Quick Sale: the form sits at the bottom, so bring it above the keyboard.
+      if (modeRef.current === 'quick') {
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+      }
+    });
+    const hide = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   function pushCalcAmount() {
     setError(null);
@@ -92,6 +162,43 @@ export function NewSaleScreen() {
     }
     setCalcStack((stack) => [...stack, value]);
     setAmount('');
+    toast.show('info', `Added ${formatRs(value)}`);
+  }
+
+  function afterSaved(startedAt: number) {
+    const { toPay, creditBalance } = extrasTotals(extras, allow, subtotal);
+    toast.show(
+      'success',
+      creditBalance > 0
+        ? `Sale saved · ${formatRs(toPay)}. ${formatRs(creditBalance)} added to the credit book.`
+        : `Sale saved · ${formatRs(toPay)}`,
+    );
+    setExtras(EMPTY_EXTRAS);
+    setJustSavedAt(startedAt - 2000);
+  }
+
+  function openCheckout() {
+    setError(null);
+    setNotice(null);
+    if (mode === 'quick' && saveTotal <= 0) {
+      setError(t((m) => m.sale.calcEnterAmount));
+      return;
+    }
+    setJustSavedAt(null);
+    setCheckoutOpen(true);
+  }
+
+  /** Closes the bill popup and leaves a clean screen for the next sale. */
+  function startNewSale() {
+    setCheckoutOpen(false);
+    setJustSavedAt(null);
+    setError(null);
+  }
+
+  function showError(caught: unknown) {
+    const message = caught instanceof Error ? caught.message : t((m) => m.sale.errorSave);
+    setError(message);
+    toast.show('error', message);
   }
 
   async function saveQuick() {
@@ -103,13 +210,14 @@ export function NewSaleScreen() {
       return;
     }
     setBusy(true);
+    const startedAt = Date.now();
     try {
-      await addQuickSale(total);
+      await addQuickSale(total, undefined, extrasInput);
       setCalcStack([]);
       setAmount('');
-      setNotice(t((m) => m.sale.saved));
+      afterSaved(startedAt);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t((m) => m.sale.errorSave));
+      showError(caught);
     } finally {
       setBusy(false);
     }
@@ -119,47 +227,203 @@ export function NewSaleScreen() {
     setError(null);
     setNotice(null);
     setBusy(true);
+    const startedAt = Date.now();
     try {
-      await checkoutBill(cart);
+      await checkoutBill(cart, extrasInput);
+      const sold = cart;
       setCart([]);
-      setNotice(t((m) => m.sale.saved));
+      kitchen.recordSale(sold).catch(() => toast.show('error', 'Sale saved, but kitchen stock usage could not be recorded.'));
+      afterSaved(startedAt);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t((m) => m.sale.errorSave));
+      showError(caught);
     } finally {
       setBusy(false);
     }
   }
 
-  async function saveCartOrder() {
+  /** The unfinished bill in one mode, as draft lines. Calculator amounts become one line each. */
+  function draftLines(which: 'quick' | 'products'): SaleLine[] {
+    if (which === 'products') return cart;
+    const amounts = padAmount > 0 ? [...calcStack, padAmount] : calcStack;
+    return amounts.map((v) => ({ name: 'Amount', qty: 1, unitPrice: v, lineTotal: v }));
+  }
+
+  function draftInfo(which: 'quick' | 'products'): DraftInfo {
+    return {
+      kind: which === 'quick' ? 'quick' : 'bill',
+      customerName: extras.customerName,
+      customerPhone: extras.customerPhone,
+    };
+  }
+
+  function clearBill(which: 'quick' | 'products') {
+    if (which === 'quick') {
+      setCalcStack([]);
+      setAmount('');
+    } else {
+      setCart([]);
+    }
+    setExtras(EMPTY_EXTRAS);
+  }
+
+  /** Parks the current bill in Drafts and clears the screen for the next customer. */
+  async function holdBill() {
+    const which = mode === 'quick' ? 'quick' : 'products';
+    const lines = draftLines(which);
+    if (!lines.length) return;
     setError(null);
     setBusy(true);
     try {
-      await saveOrder(cart);
-      setNotice(t((m) => m.sale.saveOrder));
+      await saveOrder(lines, draftInfo(which));
+      clearBill(which);
+      toast.show('success', `Bill held in Drafts · ${formatRs(billTotal(lines))}. Ready for the next customer.`);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t((m) => m.sale.errorSave));
+      showError(caught);
     } finally {
       setBusy(false);
     }
   }
 
+  /** Opens a draft. Whatever was on screen in that mode is held first, so nothing is lost. */
+  async function resumeDraft(order: SavedOrder) {
+    const which = order.kind === 'quick' ? 'quick' : 'products';
+    const current = draftLines(which);
+    try {
+      if (current.length) await saveOrder(current, draftInfo(which));
+      await deleteSavedOrder(order.id);
+    } catch (caught) {
+      showError(caught);
+      return;
+    }
+    if (which === 'quick') {
+      setCalcStack(order.items.map((l) => l.lineTotal));
+      setAmount('');
+    } else {
+      setCart(order.items);
+    }
+    setExtras({ ...EMPTY_EXTRAS, customerName: order.customerName ?? '', customerPhone: order.customerPhone ?? '' });
+    changeMode(which);
+    toast.show('info', `Draft resumed · ${formatRs(order.total)}${current.length ? '. Previous bill moved to Drafts.' : ''}`);
+  }
+
+  // Leaving with an unfinished bill (back button, Home, swipe) keeps it in Drafts.
+  const leaveRef = useRef<() => void>(() => undefined);
+  leaveRef.current = () => {
+    if (busy) return;
+    for (const which of ['quick', 'products'] as const) {
+      const lines = draftLines(which);
+      if (lines.length) saveOrder(lines, draftInfo(which)).catch(() => undefined);
+    }
+  };
+  useEffect(() => navigation.addListener('beforeRemove', () => leaveRef.current()), [navigation]);
+
+  async function printLast() {
+    if (!lastSale) return;
+    const result = await printFx.run(() => printOrShareReceipt(user?.shopName ?? 'KadaBook', lastSale));
+    if (!result) return;
+    if (result.ok) toast.show('success', 'Receipt printed');
+    else toast.show('error', `${t((m) => m.settings.printFailed)}: ${result.message}`);
+  }
+
+  function setLineQty(line: SaleLine, qty: number) {
+    const key = line.productId ?? line.name;
+    setCart((lines) =>
+      lines.map((l) =>
+        (l.productId ?? l.name) === key ? { ...l, qty, lineTotal: Math.round(qty * l.unitPrice) } : l,
+      ),
+    );
+    setError(null);
+  }
+
+  function removeLine(line: SaleLine) {
+    const key = line.productId ?? line.name;
+    setCart((lines) => lines.filter((l) => (l.productId ?? l.name) !== key));
+    toast.show('info', `${line.name} removed`);
+  }
+
+  function changeMode(next: SaleMode) {
+    setMode(next);
+    setError(null);
+    setNotice(null);
+    setJustSavedAt(null);
+  }
+
   const tabs: { key: SaleMode; label: string }[] = [
-    { key: 'products', label: t((m) => m.sale.tabProducts) },
+    // The old English label "Sale – All" was unclear; other languages keep their translation.
+    { key: 'products', label: locale === 'en' ? 'Products' : t((m) => m.sale.tabProducts) },
     { key: 'quick', label: t((m) => m.sale.tabQuick) },
-    { key: 'saved', label: t((m) => m.sale.tabSaved) },
+    {
+      key: 'saved',
+      label: books.savedOrders.length
+        ? `${t((m) => m.sale.tabSaved)} (${books.savedOrders.length})`
+        : t((m) => m.sale.tabSaved),
+    },
   ];
+  const holdButton = (
+    <Pressable onPress={() => holdBill()} disabled={busy} style={styles.secondary}>
+      <Text style={styles.secondaryText}>⏸  {t((m) => m.sale.saveOrder)}</Text>
+    </Pressable>
+  );
+
+  const extrasPanel = (
+    <SaleExtrasPanel
+      value={extras}
+      onChange={setExtras}
+      subtotal={subtotal}
+      allow={allow}
+      customers={customerOptions}
+      embedded
+    />
+  );
+
+  const noticeText = notice ? <Text style={[styles.notice, { color: colors.saleText }]}>{notice}</Text> : null;
 
   return (
     <Screen>
-      <AccessBlockedModal visible={blockedOpen} onClose={() => { setBlockedOpen(false); closeToDashboard(navigation); }} />
-      <Header title={t((m) => m.sale.title)} onBack={() => closeToDashboard(navigation)} />
+      <SaleCheckoutModal
+        visible={checkoutOpen}
+        done={justSavedAt !== null}
+        sale={lastSale}
+        totals={{ subtotal, ...extrasTotals(extras, allow, subtotal) }}
+        panel={extrasPanel}
+        busy={busy}
+        error={error}
+        printPhase={printFx.phase}
+        onConfirm={() => (mode === 'quick' ? saveQuick() : billCart())}
+        onClose={() => {
+          setCheckoutOpen(false);
+          setError(null);
+        }}
+        onNewSale={startNewSale}
+        onPrint={printLast}
+        shopName={user?.shopName ?? 'KadaBook'}
+        toast={checkoutOpen ? <Toast toast={toast.toast} onHide={toast.hide} /> : null}
+      />
+      <AccessBlockedModal
+        visible={blockedOpen}
+        onClose={() => {
+          setBlockedOpen(false);
+          closeToDashboard(navigation);
+        }}
+      />
+      <Header
+        title={t((m) => m.sale.title)}
+        onBack={() => closeToDashboard(navigation)}
+        right={
+          kitchen.data.branches.length > 1 && kitchen.activeBranchId ? (
+            <Text style={[styles.branchTag, { color: colors.brand, backgroundColor: colors.gradientTop }]} numberOfLines={1}>
+              {kitchen.data.branches.find((b) => b.id === kitchen.activeBranchId)?.name}
+            </Text>
+          ) : undefined
+        }
+      />
       <View style={[styles.tabs, { paddingHorizontal: Math.max(12, padX - 4), borderBottomColor: colors.hairline }]}>
         {tabs.map((tab) => {
           const on = tab.key === mode;
           return (
             <Pressable
               key={tab.key}
-              onPress={() => setMode(tab.key)}
+              onPress={() => changeMode(tab.key)}
               style={[styles.tab, { borderBottomColor: on ? colors.brand : 'transparent' }]}
             >
               <Text style={[styles.tabText, { color: on ? colors.brand : colors.muted }]} numberOfLines={1}>
@@ -169,151 +433,164 @@ export function NewSaleScreen() {
           );
         })}
       </View>
-      {mode === 'quick' ? (
-        <View
-          style={[
-            styles.quickBody,
-            { paddingHorizontal: padX, alignItems: contentMaxWidth ? 'center' : undefined },
-          ]}
-        >
-          <View
-            style={[
-              styles.content,
-              styles.quickContent,
-              contentMaxWidth ? { maxWidth: contentMaxWidth, width: '100%' } : undefined,
-            ]}
-          >
-            <AmountPad
-              amount={amount}
-              onChange={setAmount}
-              stack={calcStack}
-              onPlus={() => pushCalcAmount()}
-              keyHeight={keySize}
-              keyGap={10}
-              displayMinHeight={keySize + 64}
-              valueFontSize={keySize >= 64 ? 52 : 46}
-            />
-            <FillButton
-              label={t((m) => m.sale.calcSave)}
-              color={colors.saleText}
-              onPress={() => saveQuick()}
-              busy={busy}
-              disabled={saveTotal <= 0}
-            />
-            {notice ? <Text style={[styles.notice, { color: colors.saleText }]}>{notice}</Text> : null}
-            <ErrorText message={error} />
-            <Pressable onPress={() => closeToDashboard(navigation)} style={[styles.close, { borderColor: colors.line }]}>
-              <Text style={[styles.closeText, { color: colors.brand }]}>{t((m) => m.common.closeDashboard)}</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : (
       <ScrollView
-        contentContainerStyle={[styles.body, { paddingHorizontal: padX, alignItems: contentMaxWidth ? 'center' : undefined }]}
+        ref={scrollRef}
+        contentContainerStyle={[
+          styles.body,
+          {
+            paddingHorizontal: padX,
+            alignItems: contentMaxWidth ? 'center' : undefined,
+            paddingBottom: 20 + kbHeight,
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
         <View style={[styles.content, contentMaxWidth ? { maxWidth: contentMaxWidth, width: '100%' } : undefined]}>
-        {mode === 'products' ? (
-          <>
-            <Field value={search} onChangeText={setSearch} placeholder={t((m) => m.sale.searchProducts)} />
-            <View style={styles.grid}>
-              {filteredProducts.map((product) => {
-                const out = product.stock <= 0;
-                const low = product.stock > 0 && product.stock <= 5;
-                return (
-                  <Pressable
-                    key={product.id}
-                    onPress={() => setCart((lines) => addProductToBill(lines, product, setError))}
-                    style={[styles.productCard, out && styles.productOut]}
-                    disabled={out}
-                  >
-                    {low ? <Text style={styles.lowTag}>Low</Text> : null}
-                    <Text style={styles.productName} numberOfLines={2}>
-                      {product.name}
-                    </Text>
-                    <Text style={styles.productPrice}>{productSellingPrice(product).toLocaleString('en-IN')}</Text>
-                    <Text style={styles.productStock}>
-                      {product.stock > 0 ? `${product.stock} ${product.unit}` : '—'}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {cart.length === 0 ? (
-              <Text style={styles.cartEmpty}>{t((m) => m.sale.cartEmpty)}</Text>
-            ) : (
-              <View style={styles.cart}>
-                {cart.map((line) => (
-                  <View key={line.productId ?? line.name} style={styles.cartRow}>
-                    <Text style={styles.cartName} numberOfLines={1}>
-                      {line.name}
-                    </Text>
-                    <Text style={styles.cartMeta}>
-                      {line.qty} × {line.unitPrice} = {line.lineTotal}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            <View style={styles.billBar}>
-              <Text style={styles.billTotal}>{formatRs(cartTotal)}</Text>
-              <View style={styles.billActions}>
+          {mode === 'quick' ? (
+            <>
+              <AmountPad
+                amount={amount}
+                onChange={setAmount}
+                stack={calcStack}
+                onPlus={() => pushCalcAmount()}
+                keyHeight={keySize}
+                keyGap={10}
+                displayMinHeight={keySize + 64}
+                valueFontSize={keySize >= 64 ? 52 : 46}
+              />
+              <View style={styles.saveGap}>
                 <FillButton
-                  label={t((m) => m.sale.bill)}
+                  label={t((m) => m.sale.calcSave)}
                   color={colors.saleText}
-                  onPress={() => billCart()}
-                  busy={busy}
-                  disabled={cart.length === 0}
+                  onPress={openCheckout}
+                  disabled={saveTotal <= 0}
                 />
               </View>
-            </View>
-            {cart.length > 0 ? (
-              <Pressable onPress={() => saveCartOrder()} style={styles.secondary}>
-                <Text style={styles.secondaryText}>{t((m) => m.sale.saveOrder)}</Text>
-              </Pressable>
-            ) : null}
-          </>
-        ) : null}
+              {saveTotal > 0 ? holdButton : null}
+              {checkoutOpen ? null : <ErrorText message={error} />}
+            </>
+          ) : null}
 
-        {mode === 'saved' ? (
-          <>
-            {books.savedOrders.length === 0 ? (
-              <Text style={styles.cartEmpty}>{t((m) => m.sale.savedOrdersEmpty)}</Text>
-            ) : (
-              books.savedOrders.map((order) => (
-                <View key={order.id} style={styles.savedRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cartName}>{formatRs(order.total)}</Text>
-                    <Text style={styles.cartMeta}>{order.items.length} item(s)</Text>
-                  </View>
-                  <Pressable
-                    onPress={() => {
-                      setCart(order.items);
-                      setMode('products');
-                      setError(null);
-                    }}
-                    style={styles.loadBtn}
-                  >
-                    <Text style={styles.loadBtnText}>{t((m) => m.sale.loadOrder)}</Text>
-                  </Pressable>
-                  <Pressable onPress={() => deleteSavedOrder(order.id)} style={styles.deleteBtn}>
-                    <Text style={styles.deleteBtnText}>×</Text>
-                  </Pressable>
+          {mode === 'products' ? (
+            <>
+              <Field
+                value={search}
+                onChangeText={setSearch}
+                onSubmitEditing={() => {
+                  const code = search.trim();
+                  const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
+                  if (!hit) return;
+                  setCart((current) => addProductToBill(current, hit, setError));
+                  setSearch('');
+                  setMode('products');
+                }}
+                placeholder={`${t((m) => m.sale.searchProducts)} or scan barcode`}
+                autoCapitalize="none"
+              />
+              <View style={styles.grid}>
+                {filteredProducts.map((product) => (
+                  <ProductTile
+                    key={product.id}
+                    name={product.name}
+                    price={productSellingPrice(product).toLocaleString('en-IN')}
+                    stockLabel={product.stock > 0 ? `${product.stock} ${product.unit}` : '—'}
+                    low={product.stock > 0 && product.stock <= 5}
+                    out={product.stock <= 0}
+                    qty={cart.find((l) => l.productId === product.id)?.qty ?? 0}
+                    onPress={() => setCart((lines) => addProductToBill(lines, product, setError))}
+                  />
+                ))}
+              </View>
+              {cart.length === 0 ? (
+                <Text style={styles.cartEmpty}>{t((m) => m.sale.cartEmpty)}</Text>
+              ) : (
+                <View style={styles.cart}>
+                  {cart.map((line) => {
+                    const product = books.products.find((p) => p.id === line.productId);
+                    return (
+                      <CartLineRow
+                        key={line.productId ?? line.name}
+                        line={line}
+                        unit={product?.unit ?? ''}
+                        maxQty={product ? product.stock : null}
+                        onQty={(qty) => setLineQty(line, qty)}
+                        onRemove={() => removeLine(line)}
+                        onLimit={(msg) => setError(msg)}
+                      />
+                    );
+                  })}
                 </View>
-              ))
-            )}
-          </>
-        ) : null}
+              )}
+              <View style={styles.billBar}>
+                <Text style={styles.billTotal}>{formatRs(cartToPay)}</Text>
+                <View style={styles.billActions}>
+                  <FillButton
+                    label={t((m) => m.sale.bill)}
+                    color={colors.saleText}
+                    onPress={openCheckout}
+                    disabled={cart.length === 0}
+                  />
+                </View>
+              </View>
+              {cart.length > 0 ? holdButton : null}
+              {noticeText}
+            </>
+          ) : null}
 
-        <ErrorText message={error} />
-        <Pressable onPress={() => closeToDashboard(navigation)} style={[styles.close, { borderColor: colors.line }]}>
-          <Text style={[styles.closeText, { color: colors.brand }]}>{t((m) => m.common.closeDashboard)}</Text>
-        </Pressable>
+          {mode === 'saved' ? (
+            <>
+              {books.savedOrders.length === 0 ? (
+                <View style={styles.draftEmpty}>
+                  <Text style={styles.draftEmptyIcon}>🧾</Text>
+                  <Text style={styles.cartEmpty}>{t((m) => m.sale.savedOrdersEmpty)}</Text>
+                </View>
+              ) : (
+                books.savedOrders.map((order) => {
+                  const who = order.customerName || order.customerPhone;
+                  const what = order.kind === 'quick' ? 'Quick sale' : `${order.items.length} item${order.items.length === 1 ? '' : 's'}`;
+                  return (
+                    <View key={order.id} style={styles.draftCard}>
+                      <View style={[styles.draftAvatar, { backgroundColor: who ? colors.brand : colors.keypad }]}>
+                        <Text style={[styles.draftAvatarText, { color: who ? colors.onFill : colors.muted }]}>
+                          {(order.customerName?.trim()[0] ?? '#').toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cartName} numberOfLines={1}>
+                          {who || 'Walk-in customer'}
+                        </Text>
+                        <Text style={styles.cartMeta} numberOfLines={1}>
+                          {what} · {formatTime(order.savedAt)}
+                        </Text>
+                        <Text style={styles.draftTotal}>{formatRs(order.total)}</Text>
+                      </View>
+                      <Pressable onPress={() => resumeDraft(order)} style={styles.loadBtn}>
+                        <Text style={styles.loadBtnText}>▶ {t((m) => m.sale.loadOrder)}</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          deleteSavedOrder(order.id);
+                          toast.show('info', 'Draft deleted');
+                        }}
+                        style={styles.deleteBtn}
+                      >
+                        <Text style={styles.deleteBtnText}>×</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })
+              )}
+            </>
+          ) : null}
 
-        <TodaySalesHistory sales={books.sales} shopName={user?.shopName ?? 'KadaBook'} compact />
+          {mode !== 'quick' && !checkoutOpen ? <ErrorText message={error} /> : null}
+          {mode !== 'quick' ? (
+            <TodaySalesHistory sales={books.sales} shopName={user?.shopName ?? 'KadaBook'} compact />
+          ) : null}
         </View>
       </ScrollView>
-      )}
+      {checkoutOpen ? null : <Toast toast={toast.toast} onHide={toast.hide} />}
     </Screen>
   );
 }
@@ -396,6 +673,54 @@ function newSaleStyles(c: ColorPalette) {
   content: {
     width: '100%',
     gap: 12,
+  },
+  branchTag: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    overflow: 'hidden',
+    maxWidth: 110,
+  },
+  draftEmpty: {
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 28,
+  },
+  draftEmptyIcon: {
+    fontSize: 36,
+  },
+  draftCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: c.hairline,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: c.white,
+  },
+  draftAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  draftAvatarText: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+  },
+  draftTotal: {
+    fontFamily: fonts.bold,
+    fontSize: 16,
+    color: c.ink,
+    marginTop: 2,
+  },
+  saveGap: {
+    // Breathing room between the amount pad keys and the save button.
+    marginTop: 24,
   },
   notice: {
     textAlign: 'center',
@@ -632,6 +957,32 @@ function newSaleStyles(c: ColorPalette) {
   deleteBtnText: {
     fontSize: 22,
     color: c.muted,
+  },
+  savedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    minHeight: 52,
+  },
+  savedText: {
+    flex: 1,
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+  },
+  printBtn: {
+    minHeight: 38,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  printBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
   },
 };
 }

@@ -1,5 +1,6 @@
 import type { Product, Sale } from '../data/types';
 import type { ReceiptSettings } from './receiptSettings';
+import { PAYMENT_MODE_LABEL, type SaleExtras } from '../data/saleExtras';
 import { formatDay, formatRs, formatTime } from './format';
 
 export function buildReceiptText(options: {
@@ -28,7 +29,16 @@ export function buildReceiptText(options: {
     lines.push('------------------------');
   }
 
+  const extra = sale as Sale & SaleExtras;
+  if (extra.discount && extra.discount.amount > 0) {
+    lines.push(`Subtotal: ${formatRs(extra.subtotal ?? sale.amount + extra.discount.amount)}`);
+    const label = extra.discount.type === 'percent' ? `Discount (${extra.discount.value}%)` : 'Discount';
+    lines.push(`${label}: -${formatRs(extra.discount.amount)}`);
+  }
   lines.push(`TOTAL: ${formatRs(sale.amount)}`);
+  if (extra.paymentMode) lines.push(`Paid by: ${PAYMENT_MODE_LABEL[extra.paymentMode]}`);
+  if (extra.customerName) lines.push(`Customer: ${extra.customerName}`);
+  if (extra.customerPhone) lines.push(`Phone: ${extra.customerPhone}`);
   lines.push('');
   lines.push(settings?.footerLine?.trim() || 'Thank you!');
   return lines.join('\n');
@@ -67,12 +77,18 @@ export function buildLowStockReportText(shopName: string, products: Product[]) {
 }
 
 export function saleSummaryLine(sale: Sale) {
+  const extra = sale as Sale & SaleExtras;
+  let base = 'Quick sale';
   if (sale.items?.length) {
     const count = sale.items.reduce((n, line) => n + line.qty, 0);
     const prefix = sale.kind === 'quick' ? 'Quick · ' : '';
-    return `${prefix}${sale.items.length} line(s) · qty ${count}`;
+    base = `${prefix}${sale.items.length} line(s) · qty ${count}`;
   }
-  return 'Quick sale';
+  const parts = [base];
+  if (extra.customerName) parts.push(extra.customerName);
+  if (extra.paymentMode && extra.paymentMode !== 'cash') parts.push(PAYMENT_MODE_LABEL[extra.paymentMode]);
+  if (extra.discount && extra.discount.amount > 0) parts.push(`-${formatRs(extra.discount.amount)}`);
+  return parts.join(' · ');
 }
 
 function escapeHtml(value: string) {

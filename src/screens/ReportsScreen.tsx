@@ -5,7 +5,12 @@ import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MenuIcon } from '../components/Icons';
 import { AccessBlockedModal } from '../components/GateModals';
-import { FillButton, Screen } from '../components/ui';
+import { AnimatedIconPress } from '../components/AnimatedIconPress';
+import { FillButton, Header, Screen } from '../components/ui';
+import { FullReports } from '../components/FullReports';
+import { BranchChips } from '../components/kitchen/KitchenUi';
+import { useKitchen } from '../context/KitchenContext';
+import { inScope, saleBranch } from '../lib/kitchenOps';
 import { useShopGate } from '../context/ShopGateContext';
 import { useBooks } from '../context/BooksContext';
 import { useFeature } from '../context/RemoteConfigContext';
@@ -40,6 +45,12 @@ export function ReportsScreen() {
     NativeStackNavigationProp<AppStackParamList>
   >>();
   const { books } = useBooks();
+  const kitchen = useKitchen();
+  const branches = kitchen.data.branches;
+  // With more than one branch, the whole report follows the branch switcher.
+  const branchSales = branches.length > 1 ? books.sales.filter((s) => inScope(saleBranch(s, branches), kitchen.scope)) : books.sales;
+  const mainId = branches.find((b) => b.isMain)?.id ?? '';
+  const branchExpenses = branches.length > 1 ? books.expenses.filter((e) => inScope(e.branchId ?? mainId, kitchen.scope)) : books.expenses;
   const reportsOn = useFeature('reports');
   const exportOn = useFeature('export');
   const { canAccess } = useShopGate();
@@ -49,11 +60,11 @@ export function ReportsScreen() {
   const [mode, setMode] = useState<Mode>('daily');
   const now = Date.now();
   const range = periodRange(mode, now);
-  const sales = books.sales.filter((sale) => sale.createdAt >= range.start && sale.createdAt < range.end);
-  const expenses = periodExpenses(books.expenses, mode, now);
+  const sales = branchSales.filter((sale) => sale.createdAt >= range.start && sale.createdAt < range.end);
+  const expenses = periodExpenses(branchExpenses, mode, now);
   const salesTotal = sum(sales);
   const expenseTotal = sum(expenses);
-  const bars = chartBars(books.sales, mode, now);
+  const bars = chartBars(branchSales, mode, now);
   const max = Math.max(1, ...bars.map((bar) => bar.value));
   const recent = books.expenses.slice(0, 3);
   const lowStock = lowStockProducts(books.products);
@@ -94,9 +105,7 @@ export function ReportsScreen() {
   if (!reportsOn) {
     return (
       <Screen>
-        <View style={styles.top}>
-          <Text style={styles.title}>{t((m) => m.reportsTab.title)}</Text>
-        </View>
+        <Header title={t((m) => m.reportsTab.title)} onBack={() => navigation.navigate('Home')} />
         <Text style={{ padding: 20, fontFamily: fonts.regular }}>Reports are turned off.</Text>
       </Screen>
     );
@@ -105,13 +114,17 @@ export function ReportsScreen() {
   return (
     <Screen>
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
-      <View style={styles.top}>
-        <Pressable accessibilityLabel="Menu" onPress={() => navigation.navigate('More')} style={styles.iconButton}>
-          <MenuIcon />
-        </Pressable>
-        <Text style={styles.title}>{t((m) => m.reportsTab.title)}</Text>
-      </View>
+      <Header
+        title={t((m) => m.reportsTab.title)}
+        onBack={() => navigation.navigate('Home')}
+        right={
+          <AnimatedIconPress accessibilityLabel="Menu" onPress={() => navigation.navigate('More')} style={styles.iconButton}>
+            <MenuIcon />
+          </AnimatedIconPress>
+        }
+      />
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+        {branches.length > 1 ? <BranchChips branches={branches} value={kitchen.scope} onChange={kitchen.setScope} /> : null}
         <View style={styles.modes}>
           {(
             [
@@ -156,6 +169,14 @@ export function ReportsScreen() {
             ))}
           </View>
         </View>
+        <FullReports
+          sales={sales}
+          expenses={expenses}
+          allSales={branchSales}
+          allExpenses={branchExpenses}
+          products={books.products}
+          expenseLabel={(category) => expenseCategoryMessage(messages, category)}
+        />
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>{t((m) => m.reportsTab.recentExpenses)}</Text>
           <Pressable onPress={() => navigation.navigate('Expenses')} style={styles.viewAll}>
@@ -216,23 +237,11 @@ function Metric({ label, value, wash, ink }: { label: string; value: string; was
 
 function reportsStyles(c: ColorPalette) {
   return {
-  top: {
-    minHeight: 56,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
   iconButton: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  title: {
-    fontFamily: fonts.semibold,
-    fontSize: 19,
-    color: c.ink,
   },
   body: {
     paddingHorizontal: 16,

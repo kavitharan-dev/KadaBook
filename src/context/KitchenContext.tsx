@@ -1,0 +1,275 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
+import { useBooks } from './BooksContext';
+import { kitchenRepo, type MaterialInput, type NewMove } from '../data/kitchenRepo';
+import { EMPTY_KITCHEN, type BranchScope, type KitchenData, type MaterialQty } from '../data/kitchenTypes';
+import type { SaleLine } from '../data/types';
+import { linesCost, nextAvgCost, roundMoney, roundQty, saleUsage, stockLevels, valueAt } from '../lib/kitchenOps';
+
+export type PurchaseLine = { materialId: string; qty: number; unitCost: number };
+
+type KitchenValue = {
+  data: KitchenData;
+  loading: boolean;
+  error: string | null;
+  /** What the stock screens and reports show: one branch or 'all'. */
+  scope: BranchScope;
+  setScope: (scope: BranchScope) => void;
+  /** The branch new sales, expenses and stock entries go to. */
+  activeBranchId: string | null;
+  addBranch: (name: string) => Promise<string>;
+  renameBranch: (id: string, name: string) => Promise<void>;
+  saveMaterial: (id: string | null, input: MaterialInput) => Promise<string>;
+  deleteMaterial: (id: string) => Promise<void>;
+  saveRecipe: (productId: string, lines: MaterialQty[]) => Promise<void>;
+  deleteRecipe: (productId: string) => Promise<void>;
+  purchase: (branchId: string, lines: PurchaseLine[], supplier?: string, note?: string) => Promise<void>;
+  transfer: (fromId: string, toId: string, lines: MaterialQty[], note?: string) => Promise<void>;
+  produce: (branchId: string, outputId: string, qty: number, note?: string) => Promise<void>;
+  wastage: (branchId: string, lines: MaterialQty[], note?: string) => Promise<void>;
+  stockCount: (branchId: string, counted: Record<string, number>, note?: string) => Promise<void>;
+  /** Called after a bill is saved: takes the recipe materials out of the branch's stock. */
+  recordSale: (items: SaleLine[], at?: number) => Promise<void>;
+  deleteMove: (id: string) => Promise<void>;
+};
+
+const KitchenContext = createContext<KitchenValue | null>(null);
+const SCOPE_KEY = 'kb_branch_scope';
+
+function assertLines<T extends { qty: number }>(lines: T[]): T[] {
+  const good = lines.filter((l) => Number.isFinite(l.qty) && l.qty > 0);
+  if (!good.length) throw new Error('Add at least one item with a quantity.');
+  return good;
+}
+
+export function KitchenProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  const { logAudit } = useBooks();
+  const uid = user?.uid;
+  const [data, setData] = useState<KitchenData>(EMPTY_KITCHEN);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [scope, setScopeState] = useState<BranchScope>('all');
+
+  useEffect(() => {
+    if (!uid) {
+      setData(EMPTY_KITCHEN);
+      return;
+    }
+    setLoading(true);
+    const unsub = kitchenRepo.watch(
+      uid,
+      (next) => {
+        setData(next);
+        setLoading(false);
+      },
+      (message) => {
+        setError(message);
+        setLoading(false);
+      },
+    );
+    AsyncStorage.getItem(SCOPE_KEY)
+      .then((saved) => saved && setScopeState(saved))
+      .catch(() => undefined);
+    return unsub;
+  }, [uid]);
+
+  const setScope = useCallback((next: BranchScope) => {
+    setScopeState(next);
+    AsyncStorage.setItem(SCOPE_KEY, next).catch(() => undefined);
+  }, []);
+
+  const value = useMemo<KitchenValue>(() => {
+    const need = () => {
+      if (!uid) throw new Error('Sign in first.');
+      return uid;
+    };
+    const mainId = data.branches.find((b) => b.isMain)?.id ?? data.branches[0]?.id ?? null;
+    const scopeValid = scope === 'all' || data.branches.some((b) => b.id === scope);
+    const activeBranchId = scopeValid && scope !== 'all' ? scope : mainId;
+    const material = (id: string) => {
+      const found = data.materials.find((m) => m.id === id);
+      if (!found) throw new Error('That material no longer exists.');
+      return found;
+    };
+    const stockAll = stockLevels(data, 'all');
+    const branchName = (id: string) => data.branches.find((b) => b.id === id)?.name ?? id;
+    const describe = (qty: Record<string, number>) =>
+      Object.entries(qty)
+        .map(([id, q]) => { const m = data.materials.find((x) => x.id === id); return `${m?.name ?? id} ${roundQty(q)}${m?.unit ?? ''}`; })
+        .join(', ');
+
+    return {
+      data,
+      loading,
+      error,
+      scope: scopeValid ? scope : 'all',
+      setScope,
+      activeBranchId,
+
+      async addBranch(name) {
+        const clean = name.trim();
+        if (!clean) throw new Error('Enter a branch name.');
+        if (data.branches.some((b) => b.name.toLowerCase() === clean.toLowerCase())) {
+          throw new Error('A branch with that name already exists.');
+        }
+        return kitchenRepo.addBranch(need(), { name: clean.slice(0, 40), isMain: data.branches.length === 0 });
+      },
+      async renameBranch(id, name) {
+        if (!name.trim()) throw new Error('Enter a branch name.');
+        await kitchenRepo.renameBranch(need(), id, name.slice(0, 40));
+      },
+
+      async saveMaterial(id, input) {
+        if (!input.name.trim()) throw new Error('Enter the material name.');
+        if (!Number.isFinite(input.avgCost) || input.avgCost < 0) throw new Error('Enter a valid cost.');
+        if (!Number.isFinite(input.reorderLevel) || input.reorderLevel < 0) throw new Error('Enter a valid reorder level.');
+        const dup = data.materials.find((m) => m.name.toLowerCase() === input.name.trim().toLowerCase() && m.id !== id);
+        if (dup) throw new Error('A material with that name already exists.');
+        if (id && input.inputs?.some((l) => l.materialId === id)) throw new Error('An item cannot be made from itself.');
+        return kitchenRepo.saveMaterial(need(), id, { ...input, name: input.name.trim().slice(0, 60) });
+      },
+      async deleteMaterial(id) {
+        if (Math.abs(stockAll[id] ?? 0) > 0) throw new Error('This material still has stock. Use a stock count to set it to 0 first.');
+        if (data.recipes.some((r) => r.lines.some((l) => l.materialId === id))) {
+          throw new Error('A recipe still uses this material. Remove it from the recipe first.');
+        }
+        await kitchenRepo.deleteMaterial(need(), id);
+        logAudit('Material deleted', data.materials.find((m) => m.id === id)?.name ?? id);
+      },
+
+      async saveRecipe(productId, lines) {
+        const good = lines.filter((l) => l.materialId && l.qty > 0).map((l) => ({ materialId: l.materialId, qty: roundQty(l.qty) }));
+        if (!good.length) throw new Error('Add at least one material to the recipe.');
+        await kitchenRepo.saveRecipe(need(), productId, good);
+        logAudit('Recipe saved', `${productId}: ${describe(Object.fromEntries(good.map((l) => [l.materialId, l.qty])))}`);
+      },
+      async deleteRecipe(productId) {
+        await kitchenRepo.deleteRecipe(need(), productId);
+      },
+
+      async purchase(branchId, lines, supplier, note) {
+        const good = assertLines(lines);
+        if (good.some((l) => !Number.isFinite(l.unitCost) || l.unitCost < 0)) throw new Error('Enter a valid unit cost.');
+        // Same material twice in one purchase: fold the lines so the average is right.
+        const folded = new Map<string, { qty: number; value: number }>();
+        for (const l of good) {
+          const row = folded.get(l.materialId) ?? { qty: 0, value: 0 };
+          folded.set(l.materialId, { qty: row.qty + l.qty, value: row.value + l.qty * l.unitCost });
+        }
+        const qty: Record<string, number> = {};
+        const cost: Record<string, number> = {};
+        const avg: Record<string, number> = {};
+        for (const [id, row] of folded) {
+          qty[id] = roundQty(row.qty);
+          cost[id] = roundMoney(row.value);
+          avg[id] = nextAvgCost(material(id), stockAll[id] ?? 0, row.qty, row.value / row.qty);
+        }
+        await kitchenRepo.addMoves(need(), [{ type: 'purchase', branchId, qty, cost, supplier: supplier?.trim() || undefined, note: note?.trim() || undefined }], avg);
+        logAudit('Stock purchase', `${branchName(branchId)}: ${describe(qty)}`);
+      },
+
+      async transfer(fromId, toId, lines, note) {
+        if (fromId === toId) throw new Error('Choose two different branches.');
+        const good = assertLines(lines);
+        const here = stockLevels(data, fromId);
+        const out: Record<string, number> = {};
+        for (const l of good) {
+          const m = material(l.materialId);
+          const left = here[l.materialId] ?? 0;
+          if (l.qty > left + 1e-9) throw new Error(`Only ${roundQty(left)} ${m.unit} of ${m.name} at this branch.`);
+          out[l.materialId] = roundQty((out[l.materialId] ?? 0) + l.qty);
+        }
+        const refId = `tr_${Date.now().toString(36)}`;
+        const neg = Object.fromEntries(Object.entries(out).map(([k, v]) => [k, -v]));
+        // At average cost: the move is internal, so no profit is made on it.
+        const moves: NewMove[] = [
+          { type: 'transferOut', branchId: fromId, otherBranchId: toId, refId, qty: neg, cost: valueAt(neg, data.materials), note: note?.trim() || undefined },
+          { type: 'transferIn', branchId: toId, otherBranchId: fromId, refId, qty: out, cost: valueAt(out, data.materials), note: note?.trim() || undefined },
+        ];
+        await kitchenRepo.addMoves(need(), moves);
+        logAudit('Stock transfer', `${branchName(fromId)} → ${branchName(toId)}: ${describe(out)}`);
+      },
+
+      async produce(branchId, outputId, qty, note) {
+        if (!Number.isFinite(qty) || qty <= 0) throw new Error('Enter how many were made.');
+        const output = material(outputId);
+        if (!output.inputs?.length) throw new Error(`Set what one ${output.name} is made from first.`);
+        const here = stockLevels(data, branchId);
+        const used: Record<string, number> = {};
+        for (const part of output.inputs) {
+          const m = material(part.materialId);
+          const need = roundQty(part.qty * qty);
+          if (need > (here[m.id] ?? 0) + 1e-9) throw new Error(`Not enough ${m.name}: need ${need} ${m.unit}, have ${roundQty(here[m.id] ?? 0)}.`);
+          used[m.id] = -need;
+        }
+        const usedCost = valueAt(used, data.materials);
+        const totalCost = -Object.values(usedCost).reduce((a, b) => a + b, 0);
+        const unitCost = totalCost / qty;
+        const refId = `pr_${Date.now().toString(36)}`;
+        await kitchenRepo.addMoves(
+          need(),
+          [
+            { type: 'productionOut', branchId, refId, qty: used, cost: usedCost, note: note?.trim() || undefined },
+            { type: 'productionIn', branchId, refId, qty: { [outputId]: roundQty(qty) }, cost: { [outputId]: roundMoney(totalCost) }, note: note?.trim() || undefined },
+          ],
+          { [outputId]: nextAvgCost(output, stockAll[outputId] ?? 0, qty, unitCost) },
+        );
+      },
+
+      async wastage(branchId, lines, note) {
+        const good = assertLines(lines);
+        const qty: Record<string, number> = {};
+        for (const l of good) qty[l.materialId] = roundQty((qty[l.materialId] ?? 0) - l.qty);
+        await kitchenRepo.addMoves(need(), [{ type: 'wastage', branchId, qty, cost: valueAt(qty, data.materials), note: note?.trim() || undefined }]);
+        logAudit('Wastage', `${branchName(branchId)}: ${describe(qty)}${note ? ` (${note.trim()})` : ''}`);
+      },
+
+      async stockCount(branchId, counted, note) {
+        const entries = Object.entries(counted).filter(([, v]) => Number.isFinite(v) && v >= 0);
+        if (!entries.length) throw new Error('Enter at least one counted quantity.');
+        const book = stockLevels(data, branchId);
+        const qty: Record<string, number> = {};
+        const keep: Record<string, number> = {};
+        for (const [id, value] of entries) {
+          keep[id] = roundQty(value);
+          const diff = roundQty(value - (book[id] ?? 0));
+          if (diff !== 0) qty[id] = diff;
+        }
+        await kitchenRepo.addMoves(need(), [{ type: 'adjust', branchId, qty, cost: valueAt(qty, data.materials), counted: keep, note: note?.trim() || undefined }]);
+        logAudit('Stock count', `${branchName(branchId)}: ${Object.keys(qty).length ? `differences ${describe(qty)}` : 'matched the book'}`);
+      },
+
+      async recordSale(items, at = Date.now()) {
+        if (!uid || !activeBranchId) return;
+        const usage = saleUsage(items, data.recipes);
+        if (!Object.keys(usage).length) return;
+        const qty = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, -v]));
+        await kitchenRepo.addSaleUsage(uid, activeBranchId, at, qty, valueAt(qty, data.materials));
+      },
+
+      async deleteMove(id) {
+        if (id.startsWith('sale_')) throw new Error('Sales usage is removed by deleting or returning the bill.');
+        const move = data.moves.find((m) => m.id === id);
+        await kitchenRepo.deleteMove(need(), id);
+        logAudit('Stock entry deleted', move ? `${move.type} at ${branchName(move.branchId)}: ${describe(move.qty)}` : id);
+      },
+    };
+  }, [uid, data, loading, error, scope, setScope, logAudit]);
+
+  return <KitchenContext.Provider value={value}>{children}</KitchenContext.Provider>;
+}
+
+export function useKitchen() {
+  const value = useContext(KitchenContext);
+  if (!value) throw new Error('useKitchen must be used inside KitchenProvider');
+  return value;
+}
+
+/** Cost and margin of one menu item from its recipe. */
+export function itemCosting(sellingPrice: number, lines: MaterialQty[], data: KitchenData) {
+  const cost = linesCost(lines, data.materials);
+  const margin = roundMoney(sellingPrice - cost);
+  return { cost, margin, marginPercent: sellingPrice > 0 ? Math.round((margin / sellingPrice) * 1000) / 10 : 0 };
+}

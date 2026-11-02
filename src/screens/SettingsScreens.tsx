@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { collection, getDocs } from 'firebase/firestore';
+import { PlanComparison } from '../components/PlanComparison';
 import { SettingsRow } from '../components/SettingsRow';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import { useI18n } from '../context/LocaleContext';
+import { useShopGate } from '../context/ShopGateContext';
 import { useTheme } from '../context/ThemeContext';
+import { getFirestoreDb } from '../firebase/client';
+import { formatDay, formatRs } from '../lib/format';
 import { loadReceiptSettings, saveReceiptSettings, type ReceiptSettings } from '../lib/receiptSettings';
-import { PLANS, loadSubscription, saveSubscription, type PlanId } from '../lib/subscription';
 import { fonts } from '../theme/fonts';
 
 export function SettingsMenuScreen() {
@@ -25,6 +29,11 @@ export function SettingsMenuScreen() {
           title={t((m) => m.settings.receiptTitle)}
           subtitle={t((m) => m.settings.receiptSub)}
           onPress={() => navigation.navigate('ReceiptSettings' as never)}
+        />
+        <SettingsRow
+          title="Credit & WhatsApp"
+          subtitle="Shop WhatsApp number, reminder and receipt messages"
+          onPress={() => navigation.navigate('CreditSettings' as never)}
         />
         <SettingsRow
           title={t((m) => m.settings.themeTitle)}
@@ -117,21 +126,82 @@ export function ThemeSettingsScreen() {
   );
 }
 
+// Admin panel plans live in this Firestore collection. Change the name if yours differs.
+const PLANS_COLLECTION = 'plans';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RENEW_WINDOW_DAYS = 14;
+
+type AdminPlan = { id: string; name: string; price: number; days: number; active: boolean };
+
 export function UpgradePlanScreen() {
   const navigation = useNavigation();
   const { t } = useI18n();
   const { colors } = useTheme();
-  const [plan, setPlan] = useState<PlanId>('free');
+  const { openRenewWhatsApp, subscription, status, profile } = useShopGate();
+  const [plans, setPlans] = useState<AdminPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSubscription().then((s) => setPlan(s.plan));
+    let alive = true;
+    getDocs(collection(getFirestoreDb(), PLANS_COLLECTION))
+      .then((snap) => {
+        if (!alive) return;
+        const list: AdminPlan[] = snap.docs
+          .map((d) => {
+            const x = d.data() as Record<string, unknown>;
+            return {
+              id: d.id,
+              name: String(x.name ?? x.label ?? x.title ?? d.id),
+              price: Number(x.price ?? x.priceRs ?? x.amount ?? 0),
+              days: Number(x.days ?? x.durationDays ?? x.duration ?? 0),
+              active: x.active !== false,
+            };
+          })
+          .filter((p) => p.active && p.price > 0) // hides Free trial
+          .sort((a, b) => a.price - b.price);
+        setPlans(list);
+      })
+      .catch(() => {
+        if (alive) setError('Could not load plans. Check internet and try again.');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  async function choose(id: PlanId) {
-    await saveSubscription(id);
-    setPlan(id);
-    setNotice(t((m) => m.settings.planUpdated));
+  const expiresAt = subscription?.expiresAt ?? 0;
+  const daysLeft = expiresAt ? Math.ceil((expiresAt - Date.now()) / DAY_MS) : 0;
+
+  // Cheapest ~monthly plan is the baseline for "save x%" on longer plans.
+  const monthlyBase = plans
+    .filter((p) => p.days > 0 && p.days <= 31)
+    .reduce<number | null>((min, p) => (min === null || p.price < min ? p.price : min), null);
+
+  function deal(p: AdminPlan) {
+    if (!monthlyBase || p.days < 60) return null;
+    const perMonth = Math.round((p.price / p.days) * 30);
+    const save = Math.round((1 - perMonth / monthlyBase) * 100);
+    return save > 0 ? { perMonth, save } : null;
+  }
+
+  function isCurrent(p: AdminPlan) {
+    if (status !== 'active' || !subscription) return false;
+    const current = subscription.plan.toLowerCase();
+    return current === p.id.toLowerCase() || current === p.name.toLowerCase();
+  }
+
+  function buyNow(p: AdminPlan, renew: boolean) {
+    const shop = profile?.shopName ?? '-';
+    const phone = profile?.phone ?? '-';
+    openRenewWhatsApp(
+      `${renew ? 'Hi, I want to renew my KadaBook plan.' : 'Hi, I want to activate a plan in KadaBook.'}\n\nPlan: ${p.name}\nPrice: ${formatRs(p.price)}\nDuration: ${p.days} days\nShop: ${shop}\nPhone: ${phone}`,
+    );
+    setNotice('Send the WhatsApp message. Your plan will be activated after payment.');
   }
 
   return (
@@ -139,24 +209,37 @@ export function UpgradePlanScreen() {
       <Header title={t((m) => m.settings.upgradeTitle)} onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.body}>
         <Text style={[styles.hint, { color: colors.muted }]}>{t((m) => m.settings.upgradeHint)}</Text>
-        {PLANS.filter((p) => p.id !== 'free').map((item) => {
-          const active = plan === item.id;
+        {loading ? <ActivityIndicator color={colors.brand} /> : null}
+        {plans.map((item) => {
+          const active = isCurrent(item);
+          const renewable = active && daysLeft <= RENEW_WINDOW_DAYS;
+          const saving = deal(item);
           return (
             <View key={item.id} style={[styles.planCard, { borderColor: colors.hairline }]}>
-              <Text style={[styles.planTitle, { color: colors.ink }]}>{item.label}</Text>
-              <Text style={[styles.planPrice, { color: colors.brand }]}>Rs {item.priceRs.toLocaleString('en-IN')}</Text>
-              <Text style={[styles.planPeriod, { color: colors.muted }]}>{item.period}</Text>
+              <Text style={[styles.planTitle, { color: colors.ink }]}>{item.name}</Text>
+              <Text style={[styles.planPrice, { color: colors.brand }]}>{formatRs(item.price)}</Text>
+              <Text style={[styles.planPeriod, { color: colors.muted }]}>
+                {item.days} days
+                {saving ? ` · ${formatRs(saving.perMonth)} / month · save ${saving.save}%` : ''}
+              </Text>
+              {active && expiresAt ? (
+                <Text style={[styles.planPeriod, { color: colors.saleText }]}>
+                  Active until {formatDay(expiresAt)} ·{' '}
+                  {daysLeft > 0 ? `${daysLeft} days left` : 'expires today'}
+                </Text>
+              ) : null}
               <FillButton
-                label={active ? t((m) => m.settings.currentPlan) : t((m) => m.settings.buyNow)}
-                onPress={() => choose(item.id)}
-                color={active ? colors.muted : colors.brand}
-                disabled={active}
+                label={active ? (renewable ? 'Renew' : t((m) => m.settings.currentPlan)) : t((m) => m.settings.buyNow)}
+                onPress={() => buyNow(item, active)}
+                color={active && !renewable ? colors.muted : colors.brand}
+                disabled={active && !renewable}
               />
             </View>
           );
         })}
+        <PlanComparison />
         {notice ? <Text style={[styles.ok, { color: colors.saleText }]}>{notice}</Text> : null}
-        <ErrorText message={null} />
+        <ErrorText message={error} />
       </ScrollView>
     </Screen>
   );

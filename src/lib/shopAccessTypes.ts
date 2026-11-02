@@ -94,10 +94,15 @@ export type ShopProfile = {
   rejectReason?: string;
   overrides?: Partial<Record<AccessFeature, boolean>>;
   overrideReason?: string;
+  /** Admin grant. Wins over the plan tier. */
+  tierOverride?: 'basic' | 'pro' | 'premium';
 };
 
 export type SubscriptionDoc = {
   plan: string;
+  planId?: string;
+  planName?: string;
+  tier?: 'basic' | 'pro' | 'premium';
   startsAt: number;
   expiresAt: number;
   status: 'trial' | 'active' | 'grace' | 'expired';

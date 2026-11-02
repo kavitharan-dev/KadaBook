@@ -20,6 +20,13 @@ export type AppStackParamList = {
   ThemeSettings: undefined;
   UpgradePlan: undefined;
   TipsHelp: undefined;
+  CreditBook: undefined;
+  CreditLedger: { customerId: string };
+  CreditSettings: undefined;
+  Kitchen: undefined;
+  DataTools: undefined;
+  Staff: undefined;
+  AuditLog: undefined;
 };
 
 export type AuthStackParamList = {
