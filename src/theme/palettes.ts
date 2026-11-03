@@ -28,6 +28,7 @@ export const darkPalette: ColorPalette = {
   product: '#A78BFA',
   profitText: '#93C5FD',
   hairline: '#334155',
+  canvas: '#0F172A',
   rowLine: '#293548',
   keypad: '#273449',
   danger: '#F87171',

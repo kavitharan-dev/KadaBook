@@ -32,12 +32,17 @@ export type Repository = {
   saveOrder(uid: string, items: BillCheckoutInput['items'], info?: DraftInfo): Promise<void>;
   deleteSavedOrder(uid: string, id: string): Promise<void>;
   updateShopName(uid: string, shopName: string): Promise<void>;
+  updateShopType(uid: string, shopType: 'retail' | 'kitchen'): Promise<void>;
   setOpeningBalance(uid: string, dayKey: string, amount: number): Promise<void>;
   addCustomExpenseCategory(uid: string, name: string): Promise<string>;
   updateSale(uid: string, id: string, patch: { note?: string; customerName?: string; customerPhone?: string; paymentMode?: SaleExtras['paymentMode']; editedAt?: number; createdAt?: number }): Promise<void>;
   addCustomer(uid: string, input: { name: string; phone: string; note?: string }): Promise<string>;
   addCreditPayment(uid: string, input: Omit<CreditPayment, 'id' | 'createdAt'>): Promise<void>;
   addSupplier(uid: string, input: { name: string; phone?: string; payable: number }): Promise<void>;
+  /** Create supplier if needed, or add `amount` to an existing name (case-insensitive). */
+  addSupplierPayable(uid: string, name: string, amount: number, phone?: string): Promise<void>;
+  /** Reduce payable when you pay a supplier (amount > 0). */
+  paySupplier(uid: string, supplierId: string, amount: number): Promise<void>;
   addStaff(uid: string, input: { name: string; role: StaffMember['role'] }): Promise<void>;
   addAudit(uid: string, input: Omit<AuditEntry, 'id' | 'createdAt'> & { actorUid: string }): Promise<void>;
   addReturn(uid: string, input: Omit<SaleReturn, 'id' | 'createdAt'>): Promise<void>;

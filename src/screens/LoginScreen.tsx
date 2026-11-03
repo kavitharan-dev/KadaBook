@@ -48,7 +48,7 @@ export function LoginScreen() {
         showsVerticalScrollIndicator={false}
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
-        <AppLogo size={76} />
+        <AppLogo size={132} />
         <FadeUp delay={timings.copyDelayMs} style={styles.copy}>
           <Text style={[styles.wordmark, { color: colors.ink }]}>
             Kada<Text style={[styles.wordmarkAccent, { color: colors.brand }]}>Book</Text>

@@ -18,7 +18,7 @@ export function RemoteConfigGate({ children }: { children: ReactNode }) {
     return (
       <Screen>
         <View style={styles.wrap}>
-          <AppLogo size={64} />
+          <AppLogo size={88} />
           <Text style={[styles.title, { color: colors.ink }]}>Back soon</Text>
           <Text style={[styles.body, { color: colors.muted }]}>
             {config.maintenanceMessage || 'KadaBook is under maintenance. Please try again later.'}
@@ -32,7 +32,7 @@ export function RemoteConfigGate({ children }: { children: ReactNode }) {
     return (
       <Screen>
         <View style={styles.wrap}>
-          <AppLogo size={64} />
+          <AppLogo size={88} />
           <Text style={[styles.title, { color: colors.ink }]}>Please update the app</Text>
           <Text style={[styles.body, { color: colors.muted }]}>
             This version is {APP_VERSION}. Install {config.minAppVersion} or newer to continue.

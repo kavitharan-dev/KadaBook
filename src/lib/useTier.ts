@@ -3,8 +3,6 @@ import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { useShopGate } from '../context/ShopGateContext';
 import { getFirestoreDb } from '../firebase/client';
 import {
-  BASIC_PRODUCT_LIMIT,
-  TIER_FEATURES,
   TIER_LABEL,
   isTier,
   minTierFor,
@@ -87,23 +85,16 @@ export function useTier() {
     else if (status === 'trial') tier = 'premium';
     else if (status === 'active' || status === 'grace') tier = fromPlan;
 
-    const extra = planMeta?.features ?? [];
-    // The admin matrix (appConfig/tiers) wins for features it mentions. Features added after it was
-    // saved (e.g. kitchenStock) fall back to the built-in split, so no shop is locked out by an old matrix.
-    const inMatrix = (feature: TierFeature) => TIERS.some((t) => matrix?.[t]?.includes(feature));
-    const has = (feature: TierFeature) =>
-      extra.includes(feature) ||
-      (inMatrix(feature) ? !!matrix?.[tier]?.includes(feature) : TIER_FEATURES[tier].includes(feature));
-    const reportRanges: Array<'daily' | 'weekly' | 'monthly'> = has('fullReports')
-      ? ['daily', 'weekly', 'monthly']
-      : ['daily', 'weekly'];
+    // All plan features are unlocked for every shop. Billing tiers still exist for pricing only.
+    const has = (_feature: TierFeature) => true;
+    const reportRanges: Array<'daily' | 'weekly' | 'monthly'> = ['daily', 'weekly', 'monthly'];
     return {
       tier,
       label: TIER_LABEL[tier],
       has,
       neededTier: (feature: TierFeature) => TIER_LABEL[minTierFor(feature)],
       limits: {
-        products: has('unlimitedProducts') ? null : BASIC_PRODUCT_LIMIT,
+        products: null,
         reportRanges,
       },
     };

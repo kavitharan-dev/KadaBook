@@ -49,6 +49,12 @@ type BooksContextValue = {
   collectPayment: (customerId: string, amount: number, method: 'cash' | 'card', note?: string) => Promise<void>;
   /** Refund a bill and put returned item quantities back into stock. */
   addReturn: (input: Omit<SaleReturn, 'id' | 'createdAt'>) => Promise<void>;
+  /** Add or increase a supplier payable (kitchen credit purchase). */
+  addSupplierPayable: (name: string, amount: number, phone?: string) => Promise<void>;
+  /** Record a payment that reduces what you owe a supplier. */
+  paySupplier: (supplierId: string, amount: number) => Promise<void>;
+  /** Create a supplier with an optional starting balance. */
+  addSupplier: (input: { name: string; phone?: string; payable?: number }) => Promise<void>;
 };
 
 const BooksContext = createContext<BooksContextValue | null>(null);
@@ -300,6 +306,28 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         assertAmount(refund);
         await repository.addReturn(uid, { ...input, refundAmount: refund, items: input.items });
         logAudit('Bill returned', `Rs. ${refund} on ${input.saleId}`);
+      },
+      async addSupplier(input) {
+        if (!uid) return;
+        const name = input.name.trim();
+        if (!name) throw new Error('Enter a supplier name.');
+        const payable = Math.round(input.payable ?? 0);
+        if (!Number.isFinite(payable) || payable < 0) throw new Error('Enter a valid payable amount.');
+        await repository.addSupplier(uid, { name, phone: input.phone, payable });
+        logAudit('Supplier added', name);
+      },
+      async addSupplierPayable(name, amount, phone) {
+        if (!uid) return;
+        assertAmount(amount);
+        await repository.addSupplierPayable(uid, name, Math.round(amount), phone);
+        logAudit('Supplier payable', `${name.trim()}: +Rs. ${Math.round(amount)}`);
+      },
+      async paySupplier(supplierId, amount) {
+        if (!uid) return;
+        assertAmount(amount);
+        const row = books.suppliers.find((s) => s.id === supplierId);
+        await repository.paySupplier(uid, supplierId, Math.round(amount));
+        logAudit('Supplier paid', `${row?.name ?? supplierId}: Rs. ${Math.round(amount)}`);
       },
     };
   }, [books, error, loading, user]);

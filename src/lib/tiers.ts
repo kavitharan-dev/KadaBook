@@ -37,7 +37,8 @@ export const BASIC_PRODUCT_LIMIT = 100;
 export const FREE_PRODUCT_LIMIT = BASIC_PRODUCT_LIMIT;
 
 
-const PRO_FEATURES: TierFeature[] = [
+/** Every plan feature is open. Plans stay for billing only. */
+const ALL_FEATURES: TierFeature[] = [
   'creditBook',
   'barcode',
   'discount',
@@ -51,9 +52,6 @@ const PRO_FEATURES: TierFeature[] = [
   'exportData',
   'digitalReceipt',
   'saleNotes',
-];
-
-const PREMIUM_ONLY: TierFeature[] = [
   'staff',
   'kitchenStock',
   'branches',
@@ -69,9 +67,9 @@ const PREMIUM_ONLY: TierFeature[] = [
 ];
 
 export const TIER_FEATURES: Record<Tier, TierFeature[]> = {
-  basic: [],
-  pro: PRO_FEATURES,
-  premium: [...PRO_FEATURES, ...PREMIUM_ONLY],
+  basic: ALL_FEATURES,
+  pro: ALL_FEATURES,
+  premium: ALL_FEATURES,
 };
 
 export const TIER_ORDER: Tier[] = ['basic', 'pro', 'premium'];
@@ -154,9 +152,9 @@ export const FEATURE_STATUS: Record<TierFeature, 'live' | 'soon'> = {
   staff: 'live',
   kitchenStock: 'live',
   branches: 'live',
-  suppliers: 'soon',
+  suppliers: 'live',
   vatInvoice: 'soon',
-  batchExpiry: 'soon',
+  batchExpiry: 'live',
   cloudBackup: 'live',
   aiAssistant: 'soon',
   voiceBilling: 'soon',

@@ -21,6 +21,8 @@ export const colors = {
   product: '#6B4FD3',
   profitText: '#1546A8',
   hairline: '#E5E7EB',
+  /** Soft page background behind dashboard panels. */
+  canvas: '#F2F5FB',
   rowLine: '#EEF0F4',
   keypad: '#EEF0F4',
   danger: '#E5484D',

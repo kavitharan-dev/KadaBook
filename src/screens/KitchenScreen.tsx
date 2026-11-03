@@ -1,15 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialForm, MoveForm, RecipeForm, type MoveKind } from '../components/kitchen/KitchenForms';
+import { MaterialCatalogSheet } from '../components/kitchen/MaterialCatalogSheet';
 import { BranchChips, Chip, Input, Sheet, kitchenStyles } from '../components/kitchen/KitchenUi';
+import { CATALOG_CATEGORIES } from '../data/rawMaterialCatalog';
 import { Toast, useToast } from '../components/Toast';
 import { FillButton, Header, Screen } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
 import { itemCosting, useKitchen } from '../context/KitchenContext';
 import { useTheme } from '../context/ThemeContext';
 import { MOVE_LABEL, type RawMaterial, type StockMove } from '../data/kitchenTypes';
-import type { Product } from '../data/types';
+import type { Product, Supplier } from '../data/types';
 import { formatDay, formatRs, formatTime, startOfDay } from '../lib/format';
 import {
   cogsSummary,
@@ -19,10 +22,12 @@ import {
   transferSummary,
   varianceReport,
 } from '../lib/kitchenOps';
+import { maybeNotifyKitchenLowStock } from '../lib/kitchenLowStockNotify';
+import { shareKitchenReport } from '../lib/kitchenReportShare';
 import { fonts } from '../theme/fonts';
 import { useRole } from '../lib/roles';
 
-type Tab = 'stock' | 'menu' | 'moves' | 'reports';
+type Tab = 'stock' | 'menu' | 'moves' | 'suppliers' | 'reports';
 type Period = 'today' | 'week' | 'month' | 'lastMonth';
 
 function periodBounds(period: Period, now = Date.now()) {
@@ -61,10 +66,30 @@ export function KitchenScreen() {
   const [recipeProduct, setRecipeProduct] = useState<Product | null>(null);
   const [branchName, setBranchName] = useState('');
   const [addingBranch, setAddingBranch] = useState(false);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string | 'all'>('all');
+  const [supplierSheet, setSupplierSheet] = useState<'new' | Supplier | null>(null);
 
   const stock = useMemo(() => stockLevels(data, scope), [data, scope]);
   const stockValue = data.materials.reduce((sum, m) => sum + Math.max(0, stock[m.id] ?? 0) * m.avgCost, 0);
   const low = data.materials.filter((m) => m.reorderLevel > 0 && (stock[m.id] ?? 0) <= m.reorderLevel);
+
+  useEffect(() => {
+    if (k.loading || data.branches.length === 0) return;
+    void maybeNotifyKitchenLowStock(data.materials, stock);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [k.loading, data.materials.length, low.length]);
+  const categories = useMemo(() => {
+    const fromData = data.materials.map((m) => m.category).filter((c): c is string => !!c);
+    return Array.from(new Set([...CATALOG_CATEGORIES, ...fromData]));
+  }, [data.materials]);
+  const visibleMaterials = useMemo(
+    () =>
+      categoryFilter === 'all'
+        ? data.materials
+        : data.materials.filter((m) => (m.category ?? '') === categoryFilter),
+    [data.materials, categoryFilter],
+  );
   const branchName_ = (id?: string) => data.branches.find((b) => b.id === id)?.name ?? '—';
 
   const done = (message: string) => {
@@ -123,8 +148,9 @@ export function KitchenScreen() {
           {(
             [
               ['stock', 'Stock'],
-              ['menu', 'Menu cost'],
+              ['menu', 'Menu'],
               ['moves', 'Moves'],
+              ['suppliers', 'Payables'],
               ['reports', 'Reports'],
             ] as [Tab, string][]
           ).map(([key, label]) => (
@@ -143,6 +169,18 @@ export function KitchenScreen() {
               <Tile label="LOW STOCK" value={String(low.length)} tone={low.length ? colors.expenseText : undefined} />
               <Tile label="MATERIALS" value={String(data.materials.length)} />
             </View>
+            {low.length > 0 ? (
+              <View style={[styles.alertBanner, { backgroundColor: colors.expenseWash, borderColor: colors.expenseText }]}>
+                <Text style={[styles.alertTitle, { color: colors.expenseText }]}>Low stock · {low.length} item{low.length === 1 ? '' : 's'}</Text>
+                <Text style={[styles.rowSub, { color: colors.expenseText }]} numberOfLines={2}>
+                  {low
+                    .slice(0, 4)
+                    .map((m) => m.name)
+                    .join(' · ')}
+                  {low.length > 4 ? ` · +${low.length - 4}` : ''}
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.actions}>
               {ACTIONS.map((a) => (
                 <Pressable key={a.kind} onPress={() => setMove(a.kind)} style={[styles.action, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
@@ -155,14 +193,27 @@ export function KitchenScreen() {
               <Text style={[styles.section, { color: colors.ink }]}>
                 Raw materials{scope === 'all' ? ' · all branches' : ` · ${branchName_(scope)}`}
               </Text>
-              <Pressable onPress={() => setEditMaterial('new')}>
-                <Text style={[styles.link, { color: colors.brand }]}>＋ Material</Text>
-              </Pressable>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <Pressable onPress={() => setCatalogOpen(true)}>
+                  <Text style={[styles.link, { color: colors.brand }]}>＋ Catalog</Text>
+                </Pressable>
+                <Pressable onPress={() => setEditMaterial('new')}>
+                  <Text style={[styles.link, { color: colors.brand }]}>＋ Material</Text>
+                </Pressable>
+              </View>
             </View>
-            {data.materials.length === 0 ? (
-              <Empty text="No materials yet. Add buns, patties, cheese, sauces, vegetables and packaging." />
+            {data.materials.length > 0 ? (
+              <View style={styles.catRow}>
+                <Chip label="All" on={categoryFilter === 'all'} onPress={() => setCategoryFilter('all')} />
+                {categories.map((c) => (
+                  <Chip key={c} label={c} on={categoryFilter === c} onPress={() => setCategoryFilter(c)} />
+                ))}
+              </View>
             ) : null}
-            {data.materials.map((m) => {
+            {data.materials.length === 0 ? (
+              <Empty text="No materials yet. Tap ＋ Catalog to add the standard burger / fast-food list, or ＋ Material for one item." />
+            ) : null}
+            {visibleMaterials.map((m) => {
               const q = stock[m.id] ?? 0;
               const isLow = m.reorderLevel > 0 && q <= m.reorderLevel;
               return (
@@ -173,6 +224,7 @@ export function KitchenScreen() {
                       {m.inputs?.length ? <Text style={{ color: colors.brand }}>  · prepared</Text> : null}
                     </Text>
                     <Text style={[styles.rowSub, { color: colors.muted }]}>
+                      {m.category ? `${m.category} · ` : ''}
                       Avg Rs. {m.avgCost.toLocaleString('en-IN')}/{m.unit}
                       {m.reorderLevel ? ` · reorder below ${formatQty(m.reorderLevel, m.unit)}` : ''}
                     </Text>
@@ -254,7 +306,9 @@ export function KitchenScreen() {
           </>
         ) : null}
 
-        {tab === 'reports' ? <Reports period={period} setPeriod={setPeriod} /> : null}
+        {tab === 'suppliers' ? <SuppliersTab onAdd={() => setSupplierSheet('new')} onOpen={(s) => setSupplierSheet(s)} /> : null}
+
+        {tab === 'reports' ? <Reports period={period} setPeriod={setPeriod} onToast={toast.show} /> : null}
       </ScrollView>
 
       <MoveForm kind={move} onClose={() => setMove(null)} onDone={done} />
@@ -264,7 +318,16 @@ export function KitchenScreen() {
         onClose={() => setEditMaterial(null)}
         onDone={done}
       />
+      <MaterialCatalogSheet visible={catalogOpen} onClose={() => setCatalogOpen(false)} onDone={done} />
       <RecipeForm visible={recipeProduct !== null} product={recipeProduct} onClose={() => setRecipeProduct(null)} onDone={done} />
+      <SupplierSheet
+        target={supplierSheet}
+        onClose={() => setSupplierSheet(null)}
+        onDone={(message) => {
+          setSupplierSheet(null);
+          toast.show('success', message);
+        }}
+      />
       <Sheet visible={addingBranch} title="New branch" onClose={() => setAddingBranch(false)} actionLabel="Add branch" onAction={createBranch}>
         <Input value={branchName} onChangeText={setBranchName} placeholder="e.g. Branch 2 – Wellawatte" autoFocus />
       </Sheet>
@@ -320,6 +383,17 @@ function MoveRow({ move, materials, branch, other, onDelete }: {
           {move.supplier ? ` · ${move.supplier}` : ''}
           {move.note ? ` · ${move.note}` : ''}
         </Text>
+        {move.expiry && Object.keys(move.expiry).length ? (
+          <Text style={[styles.rowSub, { color: colors.muted }]} numberOfLines={2}>
+            Expiry:{' '}
+            {Object.entries(move.expiry)
+              .map(([id, day]) => {
+                const m = materials.find((x) => x.id === id);
+                return `${m?.name ?? 'Item'} ${day}`;
+              })
+              .join(' · ')}
+          </Text>
+        ) : null}
       </View>
       <Text style={[styles.rowValue, { color: inbound ? colors.saleText : colors.expenseText }]}>
         {inbound ? '+' : '−'}
@@ -329,10 +403,160 @@ function MoveRow({ move, materials, branch, other, onDelete }: {
   );
 }
 
-function Reports({ period, setPeriod }: { period: Period; setPeriod: (p: Period) => void }) {
+function SuppliersTab({ onAdd, onOpen }: { onAdd: () => void; onOpen: (s: Supplier) => void }) {
   const { colors } = useTheme();
   const { books } = useBooks();
+  const owed = books.suppliers.reduce((sum, s) => sum + (s.payable || 0), 0);
+  return (
+    <>
+      <View style={kitchenStyles.row}>
+        <Tile label="SUPPLIERS" value={String(books.suppliers.length)} />
+        <Tile label="TOTAL OWED" value={formatRs(owed)} tone={owed ? colors.expenseText : undefined} />
+      </View>
+      <View style={styles.sectionRow}>
+        <Text style={[styles.section, { color: colors.ink }]}>Supplier payables</Text>
+        <Pressable onPress={onAdd}>
+          <Text style={[styles.link, { color: colors.brand }]}>＋ Supplier</Text>
+        </Pressable>
+      </View>
+      <Text style={[styles.hint, { color: colors.muted }]}>
+        Mark a kitchen purchase as “on credit” to add here. Tap a supplier to record a payment.
+      </Text>
+      {books.suppliers.length === 0 ? <Empty text="No suppliers yet. Add one, or buy on credit from Purchase." /> : null}
+      {books.suppliers
+        .slice()
+        .sort((a, b) => b.payable - a.payable || b.createdAt - a.createdAt)
+        .map((s) => (
+          <Pressable key={s.id} onPress={() => onOpen(s)} style={[styles.row, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+            <View style={styles.flex}>
+              <Text style={[styles.rowTitle, { color: colors.ink }]} numberOfLines={1}>{s.name}</Text>
+              <Text style={[styles.rowSub, { color: colors.muted }]}>{s.phone ? s.phone : 'No phone'}</Text>
+            </View>
+            <View style={styles.right}>
+              <Text style={[styles.rowValue, { color: s.payable > 0 ? colors.expenseText : colors.ink }]}>{formatRs(s.payable)}</Text>
+              <Text style={[styles.rowSub, { color: colors.muted }]}>{s.payable > 0 ? 'owed' : 'settled'}</Text>
+            </View>
+          </Pressable>
+        ))}
+    </>
+  );
+}
+
+function SupplierSheet({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: 'new' | Supplier | null;
+  onClose: () => void;
+  onDone: (message: string) => void;
+}) {
+  const { colors } = useTheme();
+  const { addSupplier, paySupplier, addExpense } = useBooks();
+  const isNew = target === 'new';
+  const existing = target && target !== 'new' ? target : null;
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [payable, setPayable] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [asExpense, setAsExpense] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    setName(existing?.name ?? '');
+    setPhone(existing?.phone ?? '');
+    setPayable('');
+    setPayAmount('');
+    setAsExpense(true);
+    setError(null);
+  }, [target, existing?.id, existing?.name, existing?.phone]);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      if (isNew) {
+        await addSupplier({ name, phone, payable: Number(payable) || 0 });
+        onDone(`Supplier ${name.trim()} added`);
+        return;
+      }
+      if (!existing) return;
+      const amount = Number(payAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter how much you paid.');
+      await paySupplier(existing.id, amount);
+      if (asExpense) {
+        await addExpense(amount, 'Supplier Payment', {
+          note: `Paid ${existing.name}`,
+        });
+      }
+      onDone(`Paid ${formatRs(amount)} to ${existing.name}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not save.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet
+      visible={!!target}
+      title={isNew ? 'New supplier' : existing?.name ?? 'Supplier'}
+      subtitle={isNew ? 'Track who you buy from and what you owe' : `Owed ${formatRs(existing?.payable ?? 0)}`}
+      onClose={onClose}
+      actionLabel={isNew ? 'Save supplier' : 'Record payment'}
+      onAction={submit}
+      busy={busy}
+      error={error}
+    >
+      {isNew ? (
+        <>
+          <Input value={name} onChangeText={(v) => setName(v.slice(0, 60))} placeholder="Supplier name" autoFocus />
+          <Input value={phone} onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 15))} placeholder="Phone (optional)" keyboardType="phone-pad" />
+          <Input
+            value={payable}
+            onChangeText={(v) => setPayable(v.replace(/[^\d]/g, '').slice(0, 10))}
+            placeholder="Starting balance owed (optional)"
+            keyboardType="number-pad"
+          />
+        </>
+      ) : (
+        <>
+          <Input
+            value={payAmount}
+            onChangeText={(v) => setPayAmount(v.replace(/[^\d]/g, '').slice(0, 10))}
+            placeholder="Amount paid"
+            keyboardType="number-pad"
+            autoFocus
+          />
+          <Pressable onPress={() => setAsExpense((v) => !v)} style={[styles.toggle, { borderColor: asExpense ? colors.brand : colors.line }]}>
+            <Text style={{ color: colors.brand, fontSize: 18 }}>{asExpense ? '☑' : '☐'}</Text>
+            <View style={styles.flex}>
+              <Text style={[styles.rowTitle, { color: colors.ink }]}>Also save as expense</Text>
+              <Text style={[styles.hint, { color: colors.muted }]}>Posts under Expenses → Supplier Payment.</Text>
+            </View>
+          </Pressable>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function Reports({
+  period,
+  setPeriod,
+  onToast,
+}: {
+  period: Period;
+  setPeriod: (p: Period) => void;
+  onToast: (kind: 'success' | 'error' | 'info', text: string) => void;
+}) {
+  const { colors } = useTheme();
+  const { user } = useAuth();
+  const { books } = useBooks();
   const { data, scope } = useKitchen();
+  const [sharing, setSharing] = useState(false);
   const { start, end } = periodBounds(period);
   const cogs = useMemo(() => cogsSummary(data, books.sales, scope, start, end), [data, books.sales, scope, start, end]);
   const variance = useMemo(() => varianceReport(data, scope, start, end), [data, scope, start, end]);
@@ -347,6 +571,24 @@ function Reports({ period, setPeriod }: { period: Period; setPeriod: (p: Period)
       <Text style={[strong ? styles.repStrong : styles.repValue, { color: tone ?? colors.ink }]}>{value}</Text>
     </View>
   );
+
+  async function share() {
+    setSharing(true);
+    try {
+      const result = await shareKitchenReport({
+        shopName: user?.shopName ?? 'KadaBook',
+        data,
+        sales: books.sales,
+        scope,
+        start,
+        end,
+      });
+      if (!result.ok) onToast('error', result.message);
+      else onToast('success', 'Report ready to share');
+    } finally {
+      setSharing(false);
+    }
+  }
 
   return (
     <>
@@ -365,6 +607,7 @@ function Reports({ period, setPeriod }: { period: Period; setPeriod: (p: Period)
       <Text style={[styles.hint, { color: colors.muted }]}>
         {formatDay(start)} – {formatDay(end - 1)} · {scope === 'all' ? 'All branches' : name(scope)}
       </Text>
+      <FillButton label={sharing ? 'Preparing…' : 'Share COGS / variance PDF'} onPress={share} busy={sharing} />
 
       <View style={[styles.card, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
         <Text style={[styles.cardTitle, { color: colors.ink }]}>Cost of goods sold</Text>
@@ -446,8 +689,9 @@ const styles = StyleSheet.create({
   action: { width: '31%', flexGrow: 1, minHeight: 72, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
   actionIcon: { fontSize: 22 },
   actionText: { fontFamily: fonts.semibold, fontSize: 12 },
-  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 },
-  section: { fontFamily: fonts.bold, fontSize: 15 },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, gap: 8 },
+  catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  section: { fontFamily: fonts.bold, fontSize: 15, flexShrink: 1 },
   link: { fontFamily: fonts.semibold, fontSize: 13 },
   hint: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 17 },
   empty: { fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: 18 },
@@ -457,6 +701,9 @@ const styles = StyleSheet.create({
   rowValue: { fontFamily: fonts.bold, fontSize: 14 },
   right: { alignItems: 'flex-end', gap: 2 },
   badge: { fontFamily: fonts.bold, fontSize: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  alertBanner: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 2 },
+  alertTitle: { fontFamily: fonts.bold, fontSize: 13 },
+  toggle: { flexDirection: 'row', gap: 10, borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: 'flex-start' },
   periods: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
   cardTitle: { fontFamily: fonts.bold, fontSize: 15, marginBottom: 2 },

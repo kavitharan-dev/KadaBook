@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { useBooks } from './BooksContext';
 import { kitchenRepo, type MaterialInput, type NewMove } from '../data/kitchenRepo';
 import { EMPTY_KITCHEN, type BranchScope, type KitchenData, type MaterialQty } from '../data/kitchenTypes';
+import { RAW_MATERIAL_CATALOG } from '../data/rawMaterialCatalog';
 import type { SaleLine } from '../data/types';
 import { linesCost, nextAvgCost, roundMoney, roundQty, saleUsage, stockLevels, valueAt } from '../lib/kitchenOps';
 
@@ -21,10 +22,19 @@ type KitchenValue = {
   addBranch: (name: string) => Promise<string>;
   renameBranch: (id: string, name: string) => Promise<void>;
   saveMaterial: (id: string | null, input: MaterialInput) => Promise<string>;
+  /** Adds missing items from the standard raw-materials catalog. Returns how many were added. */
+  seedCatalog: (category?: string) => Promise<number>;
   deleteMaterial: (id: string) => Promise<void>;
   saveRecipe: (productId: string, lines: MaterialQty[]) => Promise<void>;
   deleteRecipe: (productId: string) => Promise<void>;
-  purchase: (branchId: string, lines: PurchaseLine[], supplier?: string, note?: string) => Promise<void>;
+  /** Returns the purchase total (Rs) so the UI can optionally post an expense. */
+  purchase: (
+    branchId: string,
+    lines: PurchaseLine[],
+    supplier?: string,
+    note?: string,
+    expiry?: Record<string, string>,
+  ) => Promise<number>;
   transfer: (fromId: string, toId: string, lines: MaterialQty[], note?: string) => Promise<void>;
   produce: (branchId: string, outputId: string, qty: number, note?: string) => Promise<void>;
   wastage: (branchId: string, lines: MaterialQty[], note?: string) => Promise<void>;
@@ -128,7 +138,27 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
         const dup = data.materials.find((m) => m.name.toLowerCase() === input.name.trim().toLowerCase() && m.id !== id);
         if (dup) throw new Error('A material with that name already exists.');
         if (id && input.inputs?.some((l) => l.materialId === id)) throw new Error('An item cannot be made from itself.');
-        return kitchenRepo.saveMaterial(need(), id, { ...input, name: input.name.trim().slice(0, 60) });
+        return kitchenRepo.saveMaterial(need(), id, {
+          ...input,
+          name: input.name.trim().slice(0, 60),
+          category: input.category?.trim().slice(0, 40) || undefined,
+        });
+      },
+      async seedCatalog(category) {
+        const known = new Set(data.materials.map((m) => m.name.toLowerCase()));
+        const rows = RAW_MATERIAL_CATALOG.filter(
+          (item) => (!category || item.category === category) && !known.has(item.name.toLowerCase()),
+        ).map((item) => ({
+          name: item.name,
+          unit: item.unit,
+          avgCost: 0,
+          reorderLevel: 0,
+          category: item.category,
+        }));
+        if (!rows.length) return 0;
+        const added = await kitchenRepo.addMaterials(need(), rows);
+        logAudit('Materials catalog added', category ? `${added} from ${category}` : `${added} standard materials`);
+        return added;
       },
       async deleteMaterial(id) {
         if (Math.abs(stockAll[id] ?? 0) > 0) throw new Error('This material still has stock. Use a stock count to set it to 0 first.');
@@ -149,7 +179,7 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
         await kitchenRepo.deleteRecipe(need(), productId);
       },
 
-      async purchase(branchId, lines, supplier, note) {
+      async purchase(branchId, lines, supplier, note, expiry) {
         const good = assertLines(lines);
         if (good.some((l) => !Number.isFinite(l.unitCost) || l.unitCost < 0)) throw new Error('Enter a valid unit cost.');
         // Same material twice in one purchase: fold the lines so the average is right.
@@ -166,8 +196,29 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
           cost[id] = roundMoney(row.value);
           avg[id] = nextAvgCost(material(id), stockAll[id] ?? 0, row.qty, row.value / row.qty);
         }
-        await kitchenRepo.addMoves(need(), [{ type: 'purchase', branchId, qty, cost, supplier: supplier?.trim() || undefined, note: note?.trim() || undefined }], avg);
-        logAudit('Stock purchase', `${branchName(branchId)}: ${describe(qty)}`);
+        const cleanExpiry = expiry
+          ? Object.fromEntries(
+              Object.entries(expiry).filter(([id, day]) => qty[id] && /^\d{4}-\d{2}-\d{2}$/.test(day)),
+            )
+          : undefined;
+        await kitchenRepo.addMoves(
+          need(),
+          [
+            {
+              type: 'purchase',
+              branchId,
+              qty,
+              cost,
+              supplier: supplier?.trim() || undefined,
+              note: note?.trim() || undefined,
+              ...(cleanExpiry && Object.keys(cleanExpiry).length ? { expiry: cleanExpiry } : {}),
+            },
+          ],
+          avg,
+        );
+        const total = roundMoney(Object.values(cost).reduce((a, b) => a + b, 0));
+        logAudit('Stock purchase', `${branchName(branchId)}: ${describe(qty)} · ${total}`);
+        return total;
       },
 
       async transfer(fromId, toId, lines, note) {

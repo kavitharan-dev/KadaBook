@@ -18,6 +18,7 @@ export function Sheet({
   busy,
   error,
   actionColor,
+  actionDisabled,
 }: {
   visible: boolean;
   title: string;
@@ -29,6 +30,7 @@ export function Sheet({
   busy?: boolean;
   error?: string | null;
   actionColor?: string;
+  actionDisabled?: boolean;
 }) {
   const { colors } = useTheme();
   return (
@@ -50,7 +52,7 @@ export function Sheet({
             <ErrorText message={error ?? null} />
           </ScrollView>
           {actionLabel && onAction ? (
-            <FillButton label={actionLabel} onPress={onAction} busy={busy} color={actionColor} />
+            <FillButton label={actionLabel} onPress={onAction} busy={busy} color={actionColor} disabled={actionDisabled} />
           ) : null}
         </View>
       </KeyboardAvoidingView>
@@ -177,10 +179,10 @@ export function MaterialSelect({
   );
 }
 
-export type EditLine = { key: string; materialId: string; qty: string; unitCost: string };
+export type EditLine = { key: string; materialId: string; qty: string; unitCost: string; expiry?: string };
 
 export function newLine(): EditLine {
-  return { key: Math.random().toString(36).slice(2), materialId: '', qty: '', unitCost: '' };
+  return { key: Math.random().toString(36).slice(2), materialId: '', qty: '', unitCost: '', expiry: '' };
 }
 
 /** Rows of material + quantity (+ unit cost for purchases). */
@@ -189,18 +191,21 @@ export function LinesEditor({
   onChange,
   materials,
   withCost,
+  withExpiry,
   stock,
 }: {
   lines: EditLine[];
   onChange: (lines: EditLine[]) => void;
   materials: RawMaterial[];
   withCost?: boolean;
+  withExpiry?: boolean;
   stock?: Record<string, number>;
 }) {
   const { colors } = useTheme();
   const patch = (key: string, next: Partial<EditLine>) =>
     onChange(lines.map((l) => (l.key === key ? { ...l, ...next } : l)));
   const num = (v: string) => v.replace(/[^\d.]/g, '').slice(0, 10);
+  const day = (v: string) => v.replace(/[^\d-]/g, '').slice(0, 10);
   return (
     <View style={styles.lines}>
       {lines.map((line) => {
@@ -233,6 +238,14 @@ export function LinesEditor({
                 <Input grow value={line.unitCost} onChangeText={(v) => patch(line.key, { unitCost: num(v) })} placeholder={`Rs per ${m?.unit ?? 'unit'}`} keyboardType="decimal-pad" />
               ) : null}
             </View>
+            {withExpiry ? (
+              <Input
+                value={line.expiry ?? ''}
+                onChangeText={(v) => patch(line.key, { expiry: day(v) })}
+                placeholder="Expiry YYYY-MM-DD (optional)"
+                autoCapitalize="none"
+              />
+            ) : null}
             {m && stock ? (
               <Text style={[styles.sub, { color: colors.muted }]}>In stock: {formatQty(stock[m.id] ?? 0, m.unit)}</Text>
             ) : null}
@@ -250,7 +263,12 @@ export function LinesEditor({
 export function parsedLines(lines: EditLine[]) {
   return lines
     .filter((l) => l.materialId && Number(l.qty) > 0)
-    .map((l) => ({ materialId: l.materialId, qty: Number(l.qty), unitCost: Number(l.unitCost) || 0 }));
+    .map((l) => ({
+      materialId: l.materialId,
+      qty: Number(l.qty),
+      unitCost: Number(l.unitCost) || 0,
+      expiry: l.expiry && /^\d{4}-\d{2}-\d{2}$/.test(l.expiry) ? l.expiry : undefined,
+    }));
 }
 
 export const kitchenStyles = StyleSheet.create({

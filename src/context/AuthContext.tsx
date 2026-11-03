@@ -12,6 +12,7 @@ type AuthContextValue = {
   resetPassword: (identity: string, nextPassword?: string) => Promise<string>;
   signOut: () => Promise<void>;
   updateShopName: (shopName: string) => Promise<void>;
+  updateShopType: (shopType: 'retail' | 'kitchen') => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -68,6 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!name) throw new Error('Enter your shop name.');
       await repository.updateShopName(user.uid, name);
       setUser({ ...user, shopName: name });
+    },
+    async updateShopType(shopType) {
+      if (!user) return;
+      await repository.updateShopType(user.uid, shopType);
+      setUser({ ...user, shopType });
     },
   }), [ready, user]);
 

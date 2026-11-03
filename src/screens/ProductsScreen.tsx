@@ -14,7 +14,9 @@ import {
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { AccessBlockedModal } from '../components/GateModals';
+import { ScanIcon } from '../components/Icons';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import { useBooks } from '../context/BooksContext';
 import { useI18n } from '../context/LocaleContext';
@@ -90,6 +92,7 @@ export function ProductsScreen() {
   const [category, setCategory] = useState('General');
   const [barcode, setBarcode] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -363,7 +366,24 @@ export function ProductsScreen() {
                   );
                 })}
               </ScrollView>
-              <Field value={barcode} onChangeText={setBarcode} placeholder="Barcode" autoCapitalize="none" />
+              <View style={styles.barcodeRow}>
+                <Field
+                  value={barcode}
+                  onChangeText={setBarcode}
+                  placeholder="Barcode"
+                  autoCapitalize="none"
+                  style={styles.barcodeField}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t((m) => m.sale.scanBarcode)}
+                  onPress={() => setScannerOpen(true)}
+                  style={[styles.scanBtn, { backgroundColor: colors.brand }]}
+                >
+                  <ScanIcon color={colors.onFill} size={20} />
+                  <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
+                </Pressable>
+              </View>
               <Field
                 value={reorderLevel}
                 onChangeText={(v) => setReorderLevel(digitsOnly(v))}
@@ -387,6 +407,16 @@ export function ProductsScreen() {
           </View>
         </View>
       </Modal>
+      <BarcodeScannerModal
+        visible={scannerOpen}
+        title={t((m) => m.sale.scanBarcode)}
+        hint={t((m) => m.sale.scanHint)}
+        onClose={() => setScannerOpen(false)}
+        onScan={(code) => {
+          setBarcode(code);
+          setScannerOpen(false);
+        }}
+      />
     </Screen>
   );
 }
@@ -400,6 +430,28 @@ function productsStyles(c: ColorPalette) {
     },
     searchWrap: {
       paddingHorizontal: 16,
+    },
+    barcodeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    barcodeField: {
+      flex: 1,
+    },
+    scanBtn: {
+      minHeight: 52,
+      minWidth: 88,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    scanBtnText: {
+      fontFamily: fonts.semibold,
+      fontSize: 13,
     },
     chipScroll: {
       flexGrow: 0,

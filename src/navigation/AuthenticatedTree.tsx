@@ -1,6 +1,7 @@
 import { AppLoading } from '../components/AppLoading';
 import { AnnouncementPopupHost } from '../components/GateModals';
 import { PinLockGate } from '../components/PinLockGate';
+import { ShopTypeGate } from '../components/ShopTypeGate';
 import { BooksProvider } from '../context/BooksContext';
 import { KitchenProvider } from '../context/KitchenContext';
 import { ShopGateProvider, useShopGate } from '../context/ShopGateContext';
@@ -28,8 +29,10 @@ function ShopGateRoot() {
   return (
     <BooksProvider>
       <KitchenProvider>
-        <AnnouncementPopupHost />
-        <AuthenticatedAppStack />
+        <ShopTypeGate>
+          <AnnouncementPopupHost />
+          <AuthenticatedAppStack />
+        </ShopTypeGate>
       </KitchenProvider>
     </BooksProvider>
   );

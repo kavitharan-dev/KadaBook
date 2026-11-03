@@ -18,6 +18,7 @@ import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { APP_VERSION, BUILD_TAG } from '../config/build';
 import * as Updates from 'expo-updates';
 import { printThermalText } from '../lib/thermalPrinter';
+import { SHOP_TYPE_HELP, SHOP_TYPE_LABEL, usesKitchenStock } from '../lib/shopType';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
@@ -79,7 +80,7 @@ export function MoreScreen() {
   const navigation = useNavigation<
     CompositeNavigationProp<BottomTabNavigationProp<TabParamList, 'More'>, NativeStackNavigationProp<AppStackParamList>>
   >();
-  const { user, cloud, signOut, updateShopName } = useAuth();
+  const { user, cloud, signOut, updateShopName, updateShopType } = useAuth();
   const { role, can } = useRole();
   const { profile, status, trialDays, subscription } = useShopGate();
   const { changePin, pinEnabled, enablePin, disablePin } = usePinLock();
@@ -94,6 +95,8 @@ export function MoreScreen() {
   const account = prettyAccount(
     (user ? displayAccount(user) : '') || profile?.email || profile?.phone || '-',
   );
+  const shopType = profile?.shopType ?? user?.shopType;
+  const showKitchen = usesKitchenStock(shopType);
 
   const [shopName, setShopName] = useState(currentName);
   const [message, setMessage] = useState<string | null>(null);
@@ -111,6 +114,20 @@ export function MoreScreen() {
     try {
       await updateShopName(shopName.trim());
       setMessage(t((m) => m.more.shopSaved));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t((m) => m.more.shopError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveShopType(next: 'retail' | 'kitchen') {
+    setError(null);
+    setMessage(null);
+    setBusy(true);
+    try {
+      await updateShopType(next);
+      setMessage(next === 'kitchen' ? 'Shop type: Kitchen / Restaurant' : 'Shop type: Retail shop');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t((m) => m.more.shopError));
     } finally {
@@ -199,6 +216,39 @@ export function MoreScreen() {
                   busy={busy}
                   disabled={busy || !shopName.trim() || shopName.trim() === currentName}
                 />
+                <View style={styles.divider} />
+                <Text style={styles.fieldLabel}>Shop type</Text>
+                <Text style={[styles.typeChipText, { color: colors.ink, marginBottom: 4 }]}>
+                  {shopType ? SHOP_TYPE_LABEL[shopType] : 'Not set'}
+                </Text>
+                <Text style={styles.typeHint}>
+                  {shopType
+                    ? SHOP_TYPE_HELP[shopType]
+                    : 'Set during registration. Kitchen shops see Kitchen & Stock on the dashboard.'}
+                </Text>
+                {shopType ? (
+                  <Pressable
+                    disabled={busy}
+                    onPress={() => {
+                      const next = shopType === 'kitchen' ? 'retail' : 'kitchen';
+                      Alert.alert(
+                        'Change shop type?',
+                        next === 'kitchen'
+                          ? 'Switch to Kitchen / Restaurant? Kitchen & Stock will appear on the dashboard.'
+                          : 'Switch to Retail shop? Kitchen & Stock will be hidden. Your kitchen data stays saved.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: `Switch to ${SHOP_TYPE_LABEL[next]}`, onPress: () => void saveShopType(next) },
+                        ],
+                      );
+                    }}
+                    style={{ paddingVertical: 8 }}
+                  >
+                    <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.brand }}>
+                      Change shop type…
+                    </Text>
+                  </Pressable>
+                ) : null}
               </>
             ) : null}
             <ErrorText message={error} />
@@ -253,7 +303,7 @@ export function MoreScreen() {
             subtitle="Customer dues, collect payments, WhatsApp reminders"
             onPress={() => navigation.navigate('CreditBook')}
           />
-          {can('manageStock') ? (
+          {can('manageStock') && showKitchen ? (
             <Row
               title="Kitchen & Stock"
               subtitle="Raw materials, recipe cost, branches, transfers, variance"
@@ -507,6 +557,31 @@ function moreStyles(c: ColorPalette) {
       fontFamily: fonts.regular,
       fontSize: 12,
       color: c.muted,
+    },
+    typeHint: {
+      fontFamily: fonts.regular,
+      fontSize: 12,
+      lineHeight: 17,
+      color: c.muted,
+      marginTop: -4,
+    },
+    typeRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    typeChip: {
+      flex: 1,
+      minHeight: 44,
+      borderWidth: 1.5,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 8,
+    },
+    typeChipText: {
+      fontFamily: fonts.semibold,
+      fontSize: 13,
+      textAlign: 'center',
     },
     fieldValue: {
       marginTop: 2,

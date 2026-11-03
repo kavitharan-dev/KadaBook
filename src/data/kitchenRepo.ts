@@ -33,6 +33,7 @@ export type MaterialInput = {
   unit: MaterialUnit;
   reorderLevel: number;
   avgCost: number;
+  category?: string;
   inputs?: MaterialQty[];
 };
 
@@ -43,6 +44,8 @@ export type KitchenRepo = {
   addBranch(uid: string, input: { name: string; isMain: boolean }): Promise<string>;
   renameBranch(uid: string, id: string, name: string): Promise<void>;
   saveMaterial(uid: string, id: string | null, input: MaterialInput): Promise<string>;
+  /** Adds many materials at once (skips names that already exist). Returns how many were created. */
+  addMaterials(uid: string, inputs: MaterialInput[]): Promise<number>;
   deleteMaterial(uid: string, id: string): Promise<void>;
   saveRecipe(uid: string, productId: string, lines: MaterialQty[]): Promise<void>;
   deleteRecipe(uid: string, productId: string): Promise<void>;
@@ -90,12 +93,14 @@ function mapBranch(id: string, d: Record<string, unknown>): Branch {
 function mapMaterial(id: string, d: Record<string, unknown>): RawMaterial {
   const unit = MATERIAL_UNITS.includes(d.unit as MaterialUnit) ? (d.unit as MaterialUnit) : 'pcs';
   const inputs = qtyLines(d.inputs);
+  const category = typeof d.category === 'string' && d.category.trim() ? d.category.trim() : undefined;
   return {
     id,
     name: String(d.name ?? 'Material'),
     unit,
     avgCost: Number(d.avgCost) || 0,
     reorderLevel: Number(d.reorderLevel) || 0,
+    ...(category ? { category } : {}),
     ...(inputs.length ? { inputs } : {}),
     createdAt: ms(d.createdAt),
   };
@@ -117,6 +122,15 @@ function mapMove(id: string, d: Record<string, unknown>): StockMove {
     ...(typeof d.refId === 'string' ? { refId: d.refId } : {}),
     ...(typeof d.otherBranchId === 'string' ? { otherBranchId: d.otherBranchId } : {}),
     ...(typeof d.supplier === 'string' && d.supplier ? { supplier: d.supplier } : {}),
+    ...(d.expiry && typeof d.expiry === 'object' && !Array.isArray(d.expiry)
+      ? {
+          expiry: Object.fromEntries(
+            Object.entries(d.expiry as Record<string, unknown>)
+              .filter(([, v]) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v))
+              .map(([k, v]) => [k, String(v).slice(0, 10)]),
+          ),
+        }
+      : {}),
     ...(typeof d.note === 'string' && d.note ? { note: d.note } : {}),
     createdAt: ms(d.createdAt),
   };
@@ -176,11 +190,30 @@ const cloudKitchen: KitchenRepo = {
         reorderLevel: input.reorderLevel,
         avgCost: input.avgCost,
         inputs: input.inputs ?? [],
+        ...(input.category !== undefined ? { category: input.category.trim() || null } : {}),
         ...(id ? {} : { createdAt: serverTimestamp() }),
       },
       { merge: true },
     );
     return ref.id;
+  },
+  async addMaterials(uid, inputs) {
+    if (!inputs.length) return 0;
+    // Catalog is < 100 items; one batch is enough (Firestore limit 500).
+    const batch = writeBatch(db());
+    for (const input of inputs) {
+      batch.set(doc(col(uid, 'materials')), {
+        name: input.name.trim(),
+        unit: input.unit,
+        reorderLevel: input.reorderLevel,
+        avgCost: input.avgCost,
+        inputs: input.inputs ?? [],
+        ...(input.category ? { category: input.category.trim() } : {}),
+        createdAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+    return inputs.length;
   },
   async deleteMaterial(uid, id) {
     await deleteDoc(doc(col(uid, 'materials'), id));
@@ -275,10 +308,34 @@ const localKitchen: KitchenRepo = {
     const materialId = id ?? newId();
     await change(uid, (d) => {
       const existing = d.materials.find((m) => m.id === materialId);
-      const next: RawMaterial = { ...input, name: input.name.trim(), id: materialId, createdAt: existing?.createdAt ?? Date.now() };
+      const next: RawMaterial = {
+        ...input,
+        name: input.name.trim(),
+        id: materialId,
+        createdAt: existing?.createdAt ?? Date.now(),
+        ...(input.category !== undefined ? { category: input.category.trim() || undefined } : { category: existing?.category }),
+      };
       d.materials = existing ? d.materials.map((m) => (m.id === materialId ? next : m)) : [...d.materials, next];
     });
     return materialId;
+  },
+  async addMaterials(uid, inputs) {
+    if (!inputs.length) return 0;
+    await change(uid, (d) => {
+      for (const input of inputs) {
+        d.materials.push({
+          id: newId(),
+          name: input.name.trim(),
+          unit: input.unit,
+          avgCost: input.avgCost,
+          reorderLevel: input.reorderLevel,
+          ...(input.category ? { category: input.category.trim() } : {}),
+          ...(input.inputs?.length ? { inputs: input.inputs } : {}),
+          createdAt: Date.now(),
+        });
+      }
+    });
+    return inputs.length;
   },
   async deleteMaterial(uid, id) {
     await change(uid, (d) => {

@@ -83,6 +83,7 @@ function publicUser(account: StoredAccount): ShopUser {
     email: account.email,
     shopName: account.shopName,
     phone: account.phone,
+    shopType: account.shopType === 'retail' || account.shopType === 'kitchen' ? account.shopType : undefined,
   };
 }
 
@@ -121,6 +122,7 @@ export const localAuth: AuthService = {
       email,
       phone,
       shopName: name,
+      shopType: input.shopType === 'retail' ? 'retail' : 'kitchen',
       passwordHash: hash(password),
     };
     accounts.push(account);
@@ -286,6 +288,14 @@ export const localRepository: Repository = {
     await writeAccounts(accounts);
     await emitSession();
   },
+  async updateShopType(uid, shopType) {
+    const accounts = await readAccounts();
+    const account = accounts.find((item) => item.uid === uid);
+    if (!account) return;
+    account.shopType = shopType;
+    await writeAccounts(accounts);
+    await emitSession();
+  },
   async setOpeningBalance(uid, dayKey, amount) {
     const books = await readBooks(uid);
     const balances = { ...(books.meta.openingBalances ?? {}), [dayKey]: Math.round(amount) };
@@ -339,6 +349,37 @@ export const localRepository: Repository = {
   async addSupplier(uid, input) {
     const books = await readBooks(uid);
     books.suppliers.unshift({ id: id(), name: input.name.trim(), phone: input.phone?.trim(), payable: Math.round(input.payable), createdAt: Date.now() });
+    await writeBooks(uid, books);
+  },
+  async addSupplierPayable(uid, name, amount, phone) {
+    const books = await readBooks(uid);
+    const label = name.trim();
+    if (!label) throw new Error('Enter a supplier name.');
+    const add = Math.round(amount);
+    if (!Number.isFinite(add) || add <= 0) throw new Error('Enter a valid amount.');
+    const existing = books.suppliers.find((s) => s.name.toLowerCase() === label.toLowerCase());
+    if (existing) {
+      existing.payable = Math.max(0, Math.round(existing.payable) + add);
+      if (phone?.trim()) existing.phone = phone.trim();
+    } else {
+      books.suppliers.unshift({
+        id: id(),
+        name: label,
+        phone: phone?.trim(),
+        payable: add,
+        createdAt: Date.now(),
+      });
+    }
+    await writeBooks(uid, books);
+  },
+  async paySupplier(uid, supplierId, amount) {
+    const books = await readBooks(uid);
+    const row = books.suppliers.find((s) => s.id === supplierId);
+    if (!row) throw new Error('Supplier not found.');
+    const pay = Math.round(amount);
+    if (!Number.isFinite(pay) || pay <= 0) throw new Error('Enter a valid payment.');
+    if (pay > row.payable) throw new Error(`Only ${row.payable} is owed to this supplier.`);
+    row.payable = Math.max(0, row.payable - pay);
     await writeBooks(uid, books);
   },
   async addStaff(uid, input) {

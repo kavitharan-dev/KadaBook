@@ -3,8 +3,8 @@
  * Stock of a material at a branch = the sum of its movement quantities at that branch.
  */
 
-export type MaterialUnit = 'g' | 'kg' | 'ml' | 'l' | 'pcs';
-export const MATERIAL_UNITS: MaterialUnit[] = ['pcs', 'g', 'kg', 'ml', 'l'];
+export type MaterialUnit = 'g' | 'kg' | 'ml' | 'l' | 'pcs' | 'slices' | 'pair' | 'roll';
+export const MATERIAL_UNITS: MaterialUnit[] = ['pcs', 'kg', 'g', 'l', 'ml', 'slices', 'pair', 'roll'];
 
 export type Branch = {
   id: string;
@@ -23,6 +23,8 @@ export type RawMaterial = {
   /** Weighted average cost of one unit, in rupees. Updated on every purchase and production. */
   avgCost: number;
   reorderLevel: number;
+  /** Group from the standard catalog (Meat, Bakery, Sauces…). */
+  category?: string;
   /** A prepared item (e.g. "Burger (ready)") lists what one unit of it is made from. */
   inputs?: MaterialQty[];
   createdAt: number;
@@ -73,6 +75,8 @@ export type StockMove = {
   /** Other branch of a transfer. */
   otherBranchId?: string;
   supplier?: string;
+  /** Purchase only: expiry date per material (YYYY-MM-DD). */
+  expiry?: Record<string, string>;
   note?: string;
   createdAt: number;
 };

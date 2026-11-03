@@ -136,12 +136,16 @@ export type Books = {
   meta: BooksMeta;
 };
 
+export type ShopType = 'retail' | 'kitchen';
+
 export type ShopUser = {
   /** The shop id (the owner's uid). For staff this is their employer's shop, not their own uid. */
   uid: string;
   email: string;
   shopName: string;
   phone: string | null;
+  /** retail hides Kitchen & Stock; kitchen shows it. Missing = treat as kitchen. */
+  shopType?: ShopType;
   /** Missing means owner (also for phone-only shops without Firebase). */
   role?: StaffRole;
   /** Staff only: their own Firebase uid and name. */

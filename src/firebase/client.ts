@@ -175,6 +175,7 @@ async function readProfile(uid: string, fallbackEmail: string): Promise<ShopUser
     email: typeof data?.email === 'string' ? data.email : fallbackEmail,
     shopName: typeof data?.shopName === 'string' && data.shopName ? data.shopName : 'My Shop',
     phone: typeof data?.phone === 'string' ? data.phone : null,
+    shopType: data?.shopType === 'retail' || data?.shopType === 'kitchen' ? data.shopType : undefined,
   };
 }
 
@@ -281,13 +282,21 @@ export const cloudAuth: AuthService = {
     const { email, phone } = accountIdentity(identity);
     try {
       const cred = await createUserWithEmailAndPassword(firebaseAuth(), email, password);
-      const user: ShopUser = { uid: cred.user.uid, email, phone: input.phone.trim() || phone, shopName: name };
+      const shopType = input.shopType === 'retail' ? 'retail' : 'kitchen';
+      const user: ShopUser = {
+        uid: cred.user.uid,
+        email,
+        phone: input.phone.trim() || phone,
+        shopName: name,
+        shopType,
+      };
       await setDoc(doc(firestore(), 'users', user.uid), {
         email,
         phone: input.phone.trim() || phone,
         shopName: name,
         ownerName: input.ownerName.trim(),
         district: input.district.trim(),
+        shopType,
         status: 'pending',
         createdAt: serverTimestamp(),
       });
@@ -758,6 +767,9 @@ export const cloudRepository: Repository = {
   async updateShopName(uid, shopName) {
     await setDoc(doc(firestore(), 'users', uid), { shopName: shopName.trim() }, { merge: true });
   },
+  async updateShopType(uid, shopType) {
+    await setDoc(doc(firestore(), 'users', uid), { shopType }, { merge: true });
+  },
   async setOpeningBalance(uid, dayKey, amount) {
     const ref = doc(firestore(), 'users', uid);
     await setDoc(ref, { [`openingBalances.${dayKey}`]: Math.round(amount) }, { merge: true });
@@ -842,6 +854,38 @@ export const cloudRepository: Repository = {
       payable: Math.round(input.payable),
       createdAt: serverTimestamp(),
     });
+  },
+  async addSupplierPayable(uid, name, amount, phone) {
+    const label = name.trim();
+    if (!label) throw new Error('Enter a supplier name.');
+    const add = Math.round(amount);
+    if (!Number.isFinite(add) || add <= 0) throw new Error('Enter a valid amount.');
+    const snap = await getDocs(collection(firestore(), 'users', uid, 'suppliers'));
+    const match = snap.docs.find((d) => String(d.data().name ?? '').toLowerCase() === label.toLowerCase());
+    if (match) {
+      const current = Number(match.data().payable) || 0;
+      await updateDoc(match.ref, {
+        payable: Math.max(0, Math.round(current) + add),
+        ...(phone?.trim() ? { phone: phone.trim() } : {}),
+      });
+      return;
+    }
+    await addDoc(collection(firestore(), 'users', uid, 'suppliers'), {
+      name: label,
+      phone: phone?.trim() || null,
+      payable: add,
+      createdAt: serverTimestamp(),
+    });
+  },
+  async paySupplier(uid, supplierId, amount) {
+    const ref = doc(firestore(), 'users', uid, 'suppliers', supplierId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Supplier not found.');
+    const pay = Math.round(amount);
+    if (!Number.isFinite(pay) || pay <= 0) throw new Error('Enter a valid payment.');
+    const owed = Number(snap.data()?.payable) || 0;
+    if (pay > owed) throw new Error(`Only ${owed} is owed to this supplier.`);
+    await updateDoc(ref, { payable: Math.max(0, owed - pay) });
   },
   async addStaff(uid, input) {
     await addDoc(collection(firestore(), 'users', uid, 'staff'), {

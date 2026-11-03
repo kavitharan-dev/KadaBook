@@ -339,7 +339,7 @@ export function PinLockGate({ children }: { children: ReactNode }) {
   const pinScreen = (
     <Screen>
       <View style={styles.wrap}>
-        <AppLogo size={56} />
+        <AppLogo size={80} />
         <Text style={[styles.title, { color: colors.ink }]}>{title}</Text>
         <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitle}</Text>
         <View style={styles.dots}>

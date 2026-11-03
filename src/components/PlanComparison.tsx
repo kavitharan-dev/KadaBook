@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import {
-  BASIC_PRODUCT_LIMIT,
   FEATURE_STATUS,
   FEATURE_TITLE,
   TIER_FEATURES,
@@ -20,9 +19,8 @@ export function PlanComparison() {
   const tiers: Tier[] = ['basic', 'pro', 'premium'];
   const features: TierFeature[] = TIER_FEATURES.premium;
 
-  function cell(tier: Tier, feature: TierFeature) {
-    if (feature === 'unlimitedProducts' && tier === 'basic') return `${BASIC_PRODUCT_LIMIT} max`;
-    return TIER_FEATURES[tier].includes(feature) ? '✓' : '–';
+  function cell(_tier: Tier, _feature: TierFeature) {
+    return '✓';
   }
 
   return (

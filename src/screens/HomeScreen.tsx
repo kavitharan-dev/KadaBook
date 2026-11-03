@@ -4,10 +4,23 @@ import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BellIcon, ExpenseIcon, MenuIcon, ProductIcon, ReportIcon, SaleIcon } from '../components/Icons';
+import {
+  BellIcon,
+  BookDuoIcon,
+  BoxDuoIcon,
+  CartDuoIcon,
+  ChartDuoIcon,
+  ChevronRightIcon,
+  GridDuoIcon,
+  MenuIcon,
+  ReceiptDuoIcon,
+  TrendDuoIcon,
+  TrophyDuoIcon,
+} from '../components/Icons';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
 import { HomeActionTile } from '../components/HomeActionTile';
+import { GradientStatCard, HeroSalesCard, gradients } from '../components/DashboardCards';
+import { FadeUp } from '../components/FadeUp';
 import { PulsingDot } from '../components/PulsingDot';
 import { AppLogo } from '../components/AppLogo';
 import { RemoteHomePromo } from '../components/RemoteHomePromo';
@@ -16,8 +29,10 @@ import { Screen, SyncNotice } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
 import { useI18n } from '../context/LocaleContext';
-import { formatDay, formatRs, isSameDay, startOfDay, sum } from '../lib/format';
+import { formatRs, isSameDay, startOfDay, sum } from '../lib/format';
 import { dayKey, openingBalanceForDay } from '../lib/dayKey';
+import { useRole } from '../lib/roles';
+import { usesKitchenStock } from '../lib/shopType';
 import { changePercent } from '../lib/stats';
 import { markOpeningPromptDay, needsOpeningBalancePrompt, readOpeningPromptDay } from '../lib/openingPrompt';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
@@ -27,19 +42,18 @@ import { fonts } from '../theme/fonts';
 import { AccessBlockedModal } from '../components/GateModals';
 import { useFeature } from '../context/RemoteConfigContext';
 import { useShopGate } from '../context/ShopGateContext';
-import type { AccessFeature } from '../lib/shopAccessTypes';
 import {
   ExpiredRenewBar,
-  GraceBanner,
   HomeAnnouncementBanner,
   TrialChip,
 } from './GateScreens';
 
 const ACTIONS = [
-  { key: 'sale', labelKey: 'newSale' as const, colorKey: 'sale' as const, route: 'NewSale' as const, Icon: SaleIcon, feature: 'addSale' as const, flag: 'sales' as const },
-  { key: 'expense', labelKey: 'addExpense' as const, colorKey: 'expense' as const, route: 'AddExpense' as const, Icon: ExpenseIcon, feature: 'addExpense' as const, flag: 'expenses' as const },
-  { key: 'products', labelKey: 'products' as const, colorKey: 'product' as const, route: 'Products' as const, Icon: ProductIcon, feature: 'manageProducts' as const, flag: 'products' as const },
-  { key: 'reports', labelKey: 'reports' as const, colorKey: 'brand' as const, route: 'Reports' as const, Icon: ReportIcon, feature: 'viewReports' as const, flag: 'reports' as const },
+  { key: 'sale', labelKey: 'newSale' as const, gradient: gradients.green, route: 'NewSale' as const, Icon: CartDuoIcon, feature: 'addSale' as const, flag: 'sales' as const },
+  { key: 'expense', labelKey: 'addExpense' as const, gradient: gradients.orange, route: 'AddExpense' as const, Icon: ReceiptDuoIcon, feature: 'addExpense' as const, flag: 'expenses' as const },
+  { key: 'credit', labelKey: 'creditBook' as const, gradient: gradients.teal, route: 'CreditBook' as const, Icon: BookDuoIcon, feature: 'addSale' as const, flag: 'sales' as const },
+  { key: 'products', labelKey: 'products' as const, gradient: gradients.purple, route: 'Products' as const, Icon: BoxDuoIcon, feature: 'manageProducts' as const, flag: 'products' as const },
+  { key: 'reports', labelKey: 'reports' as const, gradient: gradients.blue, route: 'Reports' as const, Icon: ChartDuoIcon, feature: 'viewReports' as const, flag: 'reports' as const },
 ] as const;
 
 export function HomeScreen() {
@@ -47,10 +61,13 @@ export function HomeScreen() {
     BottomTabNavigationProp<TabParamList, 'Home'>,
     NativeStackNavigationProp<AppStackParamList>
   >>();
+  const { user } = useAuth();
   const { books, error, loading, setTodayOpeningBalance } = useBooks();
   const { t } = useI18n();
   const { colors } = useTheme();
-  const { canAccess } = useShopGate();
+  const { canAccess, profile } = useShopGate();
+  const { can } = useRole();
+  const showKitchen = usesKitchenStock(profile?.shopType ?? user?.shopType) && can('manageStock');
   const salesOn = useFeature('sales');
   const expensesOn = useFeature('expenses');
   const productsOn = useFeature('products');
@@ -71,8 +88,12 @@ export function HomeScreen() {
   const yesterdaySales = sum(books.sales.filter((sale) => isSameDay(sale.createdAt, yesterday)));
   const percent = changePercent(todaySales, yesterdaySales);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-  const monthSales = sum(books.sales.filter((sale) => sale.createdAt >= monthStart));
-  const monthExpenses = sum(books.expenses.filter((expense) => expense.createdAt >= monthStart));
+  const monthSaleList = books.sales.filter((sale) => sale.createdAt >= monthStart);
+  const monthExpenseList = books.expenses.filter((expense) => expense.createdAt >= monthStart);
+  const monthSales = sum(monthSaleList);
+  const monthExpenses = sum(monthExpenseList);
+  const monthProfit = monthSales - monthExpenses;
+  const margin = monthSales > 0 ? Math.round((monthProfit / monthSales) * 100) : 0;
   const hasToday = todaySales > 0 || books.expenses.some((expense) => isSameDay(expense.createdAt, now));
 
   useEffect(() => {
@@ -120,7 +141,7 @@ export function HomeScreen() {
           <MenuIcon />
         </AnimatedIconPress>
         <View style={styles.brand}>
-          <AppLogo />
+          <AppLogo size={44} style={styles.brandLogo} />
           <Text style={[styles.brandName, { color: colors.ink }]}>
             Kada<Text style={[styles.brandAccent, { color: colors.brand }]}>Book</Text>
           </Text>
@@ -137,8 +158,8 @@ export function HomeScreen() {
         </View>
       </View>
       <ExpiredRenewBar />
-      <GraceBanner />
       <ScrollView
+        style={{ backgroundColor: colors.canvas }}
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -148,99 +169,115 @@ export function HomeScreen() {
         <SyncNotice
           message={error ? `${error} ${t((m) => m.home.syncError)}` : null}
         />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t((m) => m.home.todaySales)}
-          onPress={() => navigation.navigate('Sales')}
-          style={({ pressed }) => [pressed && styles.heroPressed]}
-        >
-          <View style={{ position: 'relative' }}>
+        <View>
+          <HeroSalesCard
+            delay={40}
+            title={t((m) => m.home.dashboard)}
+            subtitle={t((m) => m.home.dashboardSub)}
+            label={t((m) => m.home.todaySales)}
+            amount={todaySales}
+            percent={percent}
+            hint={
+              openingToday > 0
+                ? t((m) => m.home.todayOpeningNote, { opening: formatRs(openingToday), sales: formatRs(salesToday) })
+                : t((m) => m.home.openSalesHistory)
+            }
+            vsLabel={t((m) => m.home.vsYesterday)}
+            viewLabel={t((m) => m.home.view)}
+            Icon={TrendDuoIcon}
+            onPress={() => navigation.navigate('Sales')}
+          />
+          <View style={styles.trialSlot}>
             <TrialChip />
-            <LinearGradient colors={['#1D5FE0', '#3B82F6']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
-            <Text style={styles.heroLabel}>{t((m) => m.home.todaySales)}</Text>
-            <View style={styles.heroRow}>
-              <Text style={styles.heroAmount}>{formatRs(todaySales)}</Text>
-              <Text style={styles.pill}>{percent >= 0 ? '▲' : '▼'} {Math.abs(percent)}%</Text>
-            </View>
-            <Text style={styles.heroDate}>{formatDay(now)}</Text>
-            {openingToday > 0 ? (
-              <Text style={styles.heroHint}>
-                {t((m) => m.home.todayOpeningNote, { opening: formatRs(openingToday), sales: formatRs(salesToday) })}
-              </Text>
-            ) : (
-              <Text style={styles.heroHint}>{t((m) => m.home.openSalesHistory)}</Text>
-            )}
-          </LinearGradient>
           </View>
-        </Pressable>
-        <View style={styles.grid}>
-          {ACTIONS.filter((action) => flags[action.flag]).map((action, index) => (
-            <HomeActionTile
-              key={action.key}
-              delay={180 + index * 90}
-              backgroundColor={colors[action.colorKey]}
-              label={t((m) => m.home[action.labelKey])}
-              Icon={action.Icon}
-              onPress={() => {
-                if (!canAccess(action.feature)) {
-                  setBlockedOpen(true);
-                  return;
-                }
-                navigation.navigate(action.route);
-              }}
-            />
-          ))}
         </View>
+        <FadeUp delay={160} style={[styles.panel, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+          <View style={[styles.panelHead, { borderBottomColor: colors.hairline }]}>
+            <GridDuoIcon color={colors.brand} size={18} />
+            <Text style={[styles.panelTitle, { color: colors.brand }]}>{t((m) => m.home.quickActions)}</Text>
+          </View>
+          <View style={styles.grid}>
+            {ACTIONS.filter((action) => flags[action.flag]).map((action, index) => (
+              <HomeActionTile
+                key={action.key}
+                delay={220 + index * 90}
+                gradient={action.gradient}
+                label={t((m) => m.home[action.labelKey])}
+                Icon={action.Icon}
+                onPress={() => {
+                  if (!canAccess(action.feature)) {
+                    setBlockedOpen(true);
+                    return;
+                  }
+                  navigation.navigate(action.route);
+                }}
+              />
+            ))}
+            {showKitchen ? (
+              <HomeActionTile
+                key="kitchen"
+                delay={220 + ACTIONS.length * 90}
+                gradient={gradients.red}
+                label={t((m) => m.home.kitchenStock)}
+                Icon={GridDuoIcon}
+                onPress={() => {
+                  if (!canAccess('manageProducts')) {
+                    setBlockedOpen(true);
+                    return;
+                  }
+                  navigation.navigate('Kitchen');
+                }}
+              />
+            ) : null}
+          </View>
+        </FadeUp>
         <View style={styles.sectionHead}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>{t((m) => m.home.thisMonth)}</Text>
           <Pressable onPress={() => navigation.navigate('Month')} style={styles.viewAll}>
             <Text style={[styles.viewAllText, { color: colors.brand }]}>{t((m) => m.home.viewAll)}</Text>
+            <ChevronRightIcon color={colors.brand} size={15} />
           </Pressable>
         </View>
-        <View style={[styles.card, { borderColor: colors.hairline }]}>
-          <SummaryRow label={t((m) => m.home.totalSales)} value={formatRs(monthSales)} color={colors.saleText} />
-          <SummaryRow
-            label={t((m) => m.home.totalExpenses)}
-            value={formatRs(monthExpenses)}
-            color={colors.expenseText}
-            border
-            lineColor={colors.hairline}
-            labelColor={colors.ink}
+        <View style={styles.stats}>
+          <GradientStatCard
+            delay={560}
+            gradient={gradients.teal}
+            glow="rgba(20,163,142,0.32)"
+            label={t((m) => m.home.totalSales)}
+            value={monthSales}
+            chip={t((m) => m.home.salesCount, { count: monthSaleList.length })}
+            viewLabel={t((m) => m.home.view)}
+            Icon={CartDuoIcon}
+            onPress={() => navigation.navigate('Month')}
+            style={styles.statHalf}
           />
-          <SummaryRow
+          <GradientStatCard
+            delay={640}
+            gradient={gradients.orange}
+            glow="rgba(249,115,22,0.32)"
+            label={t((m) => m.home.totalExpenses)}
+            value={monthExpenses}
+            chip={t((m) => m.home.expensesCount, { count: monthExpenseList.length })}
+            viewLabel={t((m) => m.home.view)}
+            Icon={ReceiptDuoIcon}
+            onPress={() => navigation.navigate('Month')}
+            style={styles.statHalf}
+          />
+          <GradientStatCard
+            delay={720}
+            gradient={monthProfit >= 0 ? gradients.green : gradients.red}
+            glow={monthProfit >= 0 ? 'rgba(34,164,71,0.32)' : 'rgba(239,68,68,0.32)'}
             label={t((m) => m.home.profit)}
-            value={formatRs(monthSales - monthExpenses)}
-            color={colors.brand}
-            border
-            lineColor={colors.hairline}
-            labelColor={colors.ink}
+            value={monthProfit}
+            chip={t((m) => m.home.margin, { percent: margin })}
+            viewLabel={t((m) => m.home.view)}
+            Icon={TrophyDuoIcon}
+            onPress={() => navigation.navigate('Month')}
+            style={styles.statFull}
           />
         </View>
       </ScrollView>
     </Screen>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  color,
-  border,
-  lineColor,
-  labelColor,
-}: {
-  label: string;
-  value: string;
-  color: string;
-  border?: boolean;
-  lineColor?: string;
-  labelColor?: string;
-}) {
-  return (
-    <View style={[styles.row, border && lineColor ? { borderTopWidth: 1, borderTopColor: lineColor } : border && styles.rowBorder]}>
-      <Text style={[styles.rowLabel, labelColor ? { color: labelColor } : null]}>{label}</Text>
-      <Text style={[styles.rowValue, { color }]}>{value}</Text>
-    </View>
   );
 }
 
@@ -271,9 +308,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  brandLogo: {
+    marginTop: 1,
+  },
   brandName: {
     fontFamily: fonts.bold,
-    fontSize: 19,
+    fontSize: 20,
   },
   brandAccent: {
     fontFamily: fonts.bold,
@@ -290,57 +330,34 @@ const styles = StyleSheet.create({
   body: {
     flexGrow: 1,
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingTop: 12,
+    paddingBottom: 20,
     gap: 16,
   },
-  hero: {
+  trialSlot: {
+    position: 'absolute',
+    top: -14,
+    right: 54,
+    zIndex: 2,
+  },
+  panel: {
+    borderWidth: 1,
     borderRadius: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    marginTop: 4,
+    padding: 12,
+    gap: 12,
+    boxShadow: '0px 4px 14px rgba(15,23,42,0.05)',
   },
-  heroPressed: {
-    opacity: 0.92,
-  },
-  heroHint: {
-    marginTop: 8,
-    fontFamily: fonts.semibold,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.85)',
-  },
-  heroLabel: {
-    fontFamily: fonts.regular,
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.9)',
-  },
-  heroRow: {
-    marginTop: 4,
+  panelHead: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 4,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
   },
-  heroAmount: {
-    flex: 1,
+  panelTitle: {
     fontFamily: fonts.bold,
-    fontSize: 34,
-    color: '#FFFFFF',
-  },
-  pill: {
-    fontFamily: fonts.semibold,
-    fontSize: 13,
-    color: '#FFFFFF',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 10,
-    overflow: 'hidden',
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-  },
-  heroDate: {
-    marginTop: 6,
-    fontFamily: fonts.regular,
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.9)',
+    fontSize: 15,
   },
   grid: {
     flexDirection: 'row',
@@ -348,22 +365,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     rowGap: 12,
   },
-  action: {
-    width: '48%',
-    flexGrow: 1,
-    height: 92,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  actionLabel: {
-    fontFamily: fonts.semibold,
-    fontSize: 14,
-    color: '#FFFFFF',
-  },
   sectionHead: {
     marginTop: 4,
+    marginBottom: -6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -374,32 +378,24 @@ const styles = StyleSheet.create({
   },
   viewAll: {
     minHeight: 44,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
   },
   viewAllText: {
     fontFamily: fonts.semibold,
     fontSize: 13,
   },
-  card: {
-    borderWidth: 1,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  row: {
+  stats: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 15,
+    rowGap: 12,
   },
-  rowBorder: {
-    borderTopWidth: 1,
+  statHalf: {
+    width: '48%',
   },
-  rowLabel: {
-    fontFamily: fonts.regular,
-    fontSize: 14,
-  },
-  rowValue: {
-    fontFamily: fonts.bold,
-    fontSize: 14,
+  statFull: {
+    width: '100%',
   },
 });

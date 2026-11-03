@@ -54,11 +54,21 @@ export type Messages = {
     profit: string;
     newSale: string;
     addExpense: string;
+    creditBook: string;
     products: string;
     reports: string;
+    kitchenStock: string;
     syncError: string;
     openSalesHistory: string;
     todayOpeningNote: string;
+    dashboard: string;
+    dashboardSub: string;
+    quickActions: string;
+    salesCount: string;
+    expensesCount: string;
+    margin: string;
+    view: string;
+    vsYesterday: string;
   };
   sale: {
     title: string;
@@ -72,6 +82,9 @@ export type Messages = {
     tabSaved: string;
     todayHistory: string;
     searchProducts: string;
+    scanBarcode: string;
+    scanHint: string;
+    scanNotFound: string;
     cartEmpty: string;
     bill: string;
     saveOrder: string;

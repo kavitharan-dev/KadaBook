@@ -90,6 +90,8 @@ export type ShopProfile = {
   phone?: string | null;
   email?: string;
   district?: string;
+  /** retail = hide Kitchen & Stock; kitchen = show it. */
+  shopType?: 'retail' | 'kitchen';
   status: ShopStatus;
   rejectReason?: string;
   overrides?: Partial<Record<AccessFeature, boolean>>;

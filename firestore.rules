@@ -92,6 +92,29 @@ service cloud.firestore {
       return shopCanFeature(uid, 'addSale');
     }
 
+    function memberDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)/members/$(request.auth.uid));
+    }
+
+    function isShopMember(uid) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(uid)/members/$(request.auth.uid))
+        && memberDoc(uid).data.active != false;
+    }
+
+    function isShopOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    /** Owner account, or an active staff login for this shop. */
+    function isShopActor(uid) {
+      return isShopOwner(uid) || isShopMember(uid);
+    }
+
+    function isShopManager(uid) {
+      return isShopMember(uid) && memberDoc(uid).data.role == 'manager';
+    }
+
     // ── Admin-only collections ──
     match /admins/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
@@ -217,6 +240,58 @@ service cloud.firestore {
           && request.resource.data.total > 0;
         allow update: if false;
       }
+
+      // Staff membership for this shop (owner manages; staff can read own row).
+      match /members/{memberId} {
+        allow read: if isShopOwner(uid) || (isSignedIn() && request.auth.uid == memberId);
+        allow create, update: if isShopOwner(uid);
+        allow delete: if isShopOwner(uid);
+      }
+
+      // Kitchen & Stock (branches, raw materials, recipes, stock ledger).
+      // Owner + manager can manage stock; cashiers may write sale usage only.
+      match /branches/{branchId} {
+        allow read: if isShopActor(uid);
+        allow delete: if isShopOwner(uid);
+        allow create, update: if isShopOwner(uid)
+          && shopCanFeature(uid, 'manageProducts')
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 40;
+      }
+
+      match /materials/{materialId} {
+        allow read: if isShopActor(uid);
+        allow delete: if isShopOwner(uid) || isShopManager(uid);
+        allow create, update: if (isShopOwner(uid) || isShopManager(uid))
+          && shopCanFeature(uid, 'manageProducts')
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60;
+      }
+
+      match /recipes/{recipeId} {
+        allow read: if isShopActor(uid);
+        allow delete: if isShopOwner(uid) || isShopManager(uid);
+        allow create, update: if (isShopOwner(uid) || isShopManager(uid))
+          && shopCanFeature(uid, 'manageProducts');
+      }
+
+      match /stockMoves/{moveId} {
+        allow read: if isShopActor(uid);
+        allow delete: if isShopOwner(uid) || isShopManager(uid);
+        allow create, update: if isShopActor(uid)
+          && (
+            ((isShopOwner(uid) || isShopManager(uid)) && shopCanFeature(uid, 'manageProducts'))
+            || shopCanFeature(uid, 'addSale')
+          );
+      }
+    }
+
+    match /staffIndex/{staffUid} {
+      allow read: if isSignedIn() && (request.auth.uid == staffUid || isAdmin());
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || isSignedIn();
     }
   }
 }

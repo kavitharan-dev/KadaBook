@@ -11,6 +11,7 @@
     "@react-navigation/native-stack": "^7.21.0",
     "expo": "~58.0.21",
     "expo-bluetooth-thermal-printer": "^1.0.1",
+    "expo-camera": "~58.0.14",
     "expo-crypto": "~58.0.7",
     "expo-document-picker": "~58.0.4",
     "expo-file-system": "~58.0.13",

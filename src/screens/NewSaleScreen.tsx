@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { CalculatorPad as AmountPad } from '../components/CalculatorPad';
 import { SaleExtrasPanel, EMPTY_EXTRAS, buildExtras, extrasTotals, type SaleExtrasState } from '../components/SaleExtrasPanel';
 import { TodaySalesHistory } from '../components/TodaySalesHistory';
@@ -9,7 +10,10 @@ import { CartLineRow } from '../components/CartLineRow';
 import { SaleCheckoutModal } from '../components/SaleCheckoutModal';
 import { Toast, useToast } from '../components/Toast';
 import { ProductTile } from '../components/ProductTile';
+import { ScanIcon } from '../components/Icons';
+import { BranchChips } from '../components/kitchen/KitchenUi';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
+import { usesKitchenStock } from '../lib/shopType';
 import { AccessBlockedModal } from '../components/GateModals';
 import { useAuth } from '../context/AuthContext';
 import { useShopGate } from '../context/ShopGateContext';
@@ -57,7 +61,7 @@ export function NewSaleScreen() {
   const styles = useStyleSheet(newSaleStyles);
   const navigation = useNavigation<NativeStackNavigationProp<AppStackParamList>>();
   const { user } = useAuth();
-  const { canAccess } = useShopGate();
+  const { canAccess, profile } = useShopGate();
   const [blockedOpen, setBlockedOpen] = useState(false);
   const { t, locale } = useI18n();
   const { books, addQuickSale, checkoutBill, saveOrder, deleteSavedOrder } = useBooks();
@@ -79,6 +83,7 @@ export function NewSaleScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [cart, setCart] = useState<SaleLine[]>([]);
   const [extras, setExtras] = useState<SaleExtrasState>(EMPTY_EXTRAS);
   const [justSavedAt, setJustSavedAt] = useState<number | null>(null);
@@ -406,17 +411,17 @@ export function NewSaleScreen() {
           closeToDashboard(navigation);
         }}
       />
-      <Header
-        title={t((m) => m.sale.title)}
-        onBack={() => closeToDashboard(navigation)}
-        right={
-          kitchen.data.branches.length > 1 && kitchen.activeBranchId ? (
-            <Text style={[styles.branchTag, { color: colors.brand, backgroundColor: colors.gradientTop }]} numberOfLines={1}>
-              {kitchen.data.branches.find((b) => b.id === kitchen.activeBranchId)?.name}
-            </Text>
-          ) : undefined
-        }
-      />
+      <Header title={t((m) => m.sale.title)} onBack={() => closeToDashboard(navigation)} />
+      {usesKitchenStock(profile?.shopType ?? user?.shopType) && kitchen.data.branches.length > 1 ? (
+        <View style={{ paddingHorizontal: Math.max(12, padX - 4), paddingBottom: 6 }}>
+          <BranchChips
+            branches={kitchen.data.branches}
+            value={kitchen.activeBranchId ?? kitchen.data.branches[0]?.id ?? ''}
+            onChange={(id) => kitchen.setScope(id)}
+            allowAll={false}
+          />
+        </View>
+      ) : null}
       <View style={[styles.tabs, { paddingHorizontal: Math.max(12, padX - 4), borderBottomColor: colors.hairline }]}>
         {tabs.map((tab) => {
           const on = tab.key === mode;
@@ -474,20 +479,35 @@ export function NewSaleScreen() {
 
           {mode === 'products' ? (
             <>
-              <Field
-                value={search}
-                onChangeText={setSearch}
-                onSubmitEditing={() => {
-                  const code = search.trim();
-                  const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
-                  if (!hit) return;
-                  setCart((current) => addProductToBill(current, hit, setError));
-                  setSearch('');
-                  setMode('products');
-                }}
-                placeholder={`${t((m) => m.sale.searchProducts)} or scan barcode`}
-                autoCapitalize="none"
-              />
+              <View style={styles.searchRow}>
+                <Field
+                  value={search}
+                  onChangeText={setSearch}
+                  onSubmitEditing={() => {
+                    const code = search.trim();
+                    const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
+                    if (!hit) {
+                      if (code) setError(t((m) => m.sale.scanNotFound).replace('{code}', code));
+                      return;
+                    }
+                    setCart((current) => addProductToBill(current, hit, setError));
+                    setSearch('');
+                    setMode('products');
+                  }}
+                  placeholder={t((m) => m.sale.searchProducts)}
+                  autoCapitalize="none"
+                  style={styles.searchField}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t((m) => m.sale.scanBarcode)}
+                  onPress={() => setScannerOpen(true)}
+                  style={[styles.scanBtn, { backgroundColor: colors.brand }]}
+                >
+                  <ScanIcon color={colors.onFill} size={20} />
+                  <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
+                </Pressable>
+              </View>
               <View style={styles.grid}>
                 {filteredProducts.map((product) => (
                   <ProductTile
@@ -590,6 +610,24 @@ export function NewSaleScreen() {
           ) : null}
         </View>
       </ScrollView>
+      <BarcodeScannerModal
+        visible={scannerOpen}
+        title={t((m) => m.sale.scanBarcode)}
+        hint={t((m) => m.sale.scanHint)}
+        onClose={() => setScannerOpen(false)}
+        onScan={(code) => {
+          setScannerOpen(false);
+          const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
+          if (!hit) {
+            setError(t((m) => m.sale.scanNotFound).replace('{code}', code));
+            setSearch(code);
+            return;
+          }
+          setCart((current) => addProductToBill(current, hit, setError));
+          setSearch('');
+          toast.show('success', hit.name);
+        }}
+      />
       {checkoutOpen ? null : <Toast toast={toast.toast} onHide={toast.hide} />}
     </Screen>
   );
@@ -828,6 +866,28 @@ function newSaleStyles(c: ColorPalette) {
   calcTotalValue: {
     fontFamily: fonts.bold,
     textAlign: 'center',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchField: {
+    flex: 1,
+  },
+  scanBtn: {
+    minHeight: 52,
+    minWidth: 88,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  scanBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
   },
   grid: {
     flexDirection: 'row',

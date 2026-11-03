@@ -20,7 +20,7 @@ function GateShell({
   return (
     <Screen>
       <View style={styles.wrap}>
-        <AppLogo size={48} />
+        <AppLogo size={72} />
         <Text style={[styles.title, { color: colors.ink }]}>{title}</Text>
         <Text style={[styles.body, { color: colors.muted }]}>{body}</Text>
         {children}

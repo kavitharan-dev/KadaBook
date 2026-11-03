@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useBooks } from '../../context/BooksContext';
 import { itemCosting, useKitchen } from '../../context/KitchenContext';
 import { useTheme } from '../../context/ThemeContext';
 import { MATERIAL_UNITS, type MaterialUnit, type RawMaterial } from '../../data/kitchenTypes';
@@ -26,6 +27,7 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
   const { data, saveMaterial, deleteMaterial } = useKitchen();
   const [name, setName] = useState('');
   const [unit, setUnit] = useState<MaterialUnit>('pcs');
+  const [category, setCategory] = useState('');
   const [cost, setCost] = useState('');
   const [reorder, setReorder] = useState('');
   const [prepared, setPrepared] = useState(false);
@@ -37,6 +39,7 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
     if (!visible) return;
     setName(material?.name ?? '');
     setUnit(material?.unit ?? 'pcs');
+    setCategory(material?.category ?? '');
     setCost(material ? String(material.avgCost) : '');
     setReorder(material ? String(material.reorderLevel) : '');
     setPrepared(!!material?.inputs?.length);
@@ -57,6 +60,7 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
         unit,
         avgCost: Number(cost) || 0,
         reorderLevel: Number(reorder) || 0,
+        category: category.trim() || undefined,
         inputs: prepared ? inputRows : [],
       });
       onDone(material ? `${name.trim()} updated` : `${name.trim()} added`);
@@ -90,6 +94,8 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
     >
       <Label>NAME</Label>
       <Input value={name} onChangeText={(v) => setName(v.slice(0, 60))} placeholder="e.g. Burger bun" />
+      <Label>CATEGORY (OPTIONAL)</Label>
+      <Input value={category} onChangeText={(v) => setCategory(v.slice(0, 40))} placeholder="e.g. Meat & Protein" />
       <Label>UNIT</Label>
       <View style={styles.wrap}>
         {MATERIAL_UNITS.map((u) => (
@@ -252,6 +258,7 @@ const MOVE_COPY: Record<MoveKind, { title: string; sub: string; action: string }
 export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onClose: () => void; onDone: (message: string) => void }) {
   const { colors } = useTheme();
   const k = useKitchen();
+  const { books, addExpense, addSupplierPayable } = useBooks();
   const { data } = k;
   const [branchId, setBranchId] = useState<string>('');
   const [toId, setToId] = useState<string>('');
@@ -261,6 +268,8 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [supplier, setSupplier] = useState('');
   const [note, setNote] = useState('');
+  const [asExpense, setAsExpense] = useState(true);
+  const [onCredit, setOnCredit] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -275,6 +284,8 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
     setCounts({});
     setSupplier('');
     setNote('');
+    setAsExpense(true);
+    setOnCredit(false);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind]);
@@ -294,8 +305,26 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
       if (!branchId) throw new Error('Create a branch first.');
       let message = '';
       if (kind === 'purchase') {
-        await k.purchase(branchId, rows, supplier, note);
-        message = `Purchase saved · ${formatRs(purchaseTotal)}`;
+        const expiry = Object.fromEntries(
+          rows.filter((r) => r.expiry).map((r) => [r.materialId, r.expiry as string]),
+        );
+        const purchaseLines = rows.map(({ materialId, qty, unitCost }) => ({ materialId, qty, unitCost }));
+        const total = await k.purchase(branchId, purchaseLines, supplier, note, expiry);
+        const who = supplier.trim();
+        if (onCredit) {
+          if (!who) throw new Error('Enter a supplier name for credit purchases.');
+          if (total <= 0) throw new Error('Enter purchase items with cost.');
+          await addSupplierPayable(who, total);
+          message = `Purchase on credit · ${formatRs(total)} owed to ${who}`;
+        } else if (asExpense && total > 0) {
+          await addExpense(total, 'Stock Purchase', {
+            note: [who ? `Supplier: ${who}` : null, note.trim() || null].filter(Boolean).join(' · ') || 'Kitchen purchase',
+            branchId,
+          });
+          message = `Purchase + expense saved · ${formatRs(total)}`;
+        } else {
+          message = `Purchase saved · ${formatRs(total)}`;
+        }
       } else if (kind === 'transfer') {
         if (!toId) throw new Error('Add a second branch to transfer to.');
         await k.transfer(branchId, toId, rows, note);
@@ -364,13 +393,53 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
       {kind === 'purchase' || kind === 'transfer' || kind === 'wastage' ? (
         <>
           <Label>ITEMS</Label>
-          <LinesEditor lines={lines} onChange={setLines} materials={data.materials} withCost={kind === 'purchase'} stock={kind === 'purchase' ? undefined : stock} />
+          <LinesEditor
+            lines={lines}
+            onChange={setLines}
+            materials={data.materials}
+            withCost={kind === 'purchase'}
+            withExpiry={kind === 'purchase'}
+            stock={kind === 'purchase' ? undefined : stock}
+          />
         </>
       ) : null}
       {kind === 'purchase' ? (
         <>
           <Text style={[styles.total, { color: colors.ink }]}>Total {formatRs(purchaseTotal)}</Text>
-          <Input value={supplier} onChangeText={(v) => setSupplier(v.slice(0, 60))} placeholder="Supplier (optional)" />
+          <Input value={supplier} onChangeText={(v) => setSupplier(v.slice(0, 60))} placeholder="Supplier name" />
+          {books.suppliers.length > 0 ? (
+            <View style={styles.chipWrap}>
+              {books.suppliers.slice(0, 8).map((s) => (
+                <Chip key={s.id} label={s.name} on={supplier.trim().toLowerCase() === s.name.toLowerCase()} onPress={() => setSupplier(s.name)} />
+              ))}
+            </View>
+          ) : null}
+          <Pressable
+            onPress={() => {
+              setOnCredit((v) => !v);
+              if (!onCredit) setAsExpense(false);
+            }}
+            style={[styles.toggle, { borderColor: onCredit ? colors.brand : colors.line }]}
+          >
+            <Text style={[styles.toggleBox, { color: colors.brand }]}>{onCredit ? '☑' : '☐'}</Text>
+            <View style={styles.flex}>
+              <Text style={[styles.toggleTitle, { color: colors.ink }]}>Buy on credit (payable)</Text>
+              <Text style={[styles.hint, { color: colors.muted }]}>
+                Adds the total to this supplier’s unpaid balance instead of posting an expense now.
+              </Text>
+            </View>
+          </Pressable>
+          {!onCredit ? (
+            <Pressable onPress={() => setAsExpense((v) => !v)} style={[styles.toggle, { borderColor: asExpense ? colors.brand : colors.line }]}>
+              <Text style={[styles.toggleBox, { color: colors.brand }]}>{asExpense ? '☑' : '☐'}</Text>
+              <View style={styles.flex}>
+                <Text style={[styles.toggleTitle, { color: colors.ink }]}>Also save as expense</Text>
+                <Text style={[styles.hint, { color: colors.muted }]}>
+                  Posts the same total under Expenses → Stock Purchase, so profit reports stay correct.
+                </Text>
+              </View>
+            </Pressable>
+          ) : null}
         </>
       ) : null}
 
@@ -423,6 +492,7 @@ const styles = StyleSheet.create({
   costCard: { borderRadius: 14, padding: 12, gap: 4 },
   costRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   total: { fontFamily: fonts.bold, fontSize: 16, textAlign: 'right' },
+  chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   countRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   countInput: { width: 110 },
 });

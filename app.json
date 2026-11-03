@@ -3,7 +3,7 @@
     "name": "KadaBook",
     "slug": "kadabook",
     "backgroundColor": "#E8F1FF",
-    "version": "1.1.1.1",
+    "version": "1.1.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -23,12 +23,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.kadabook.shop",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow KadaBook to use the camera to scan product barcodes."
       }
     },
     "android": {
       "package": "com.kadabook.shop",
-      "versionCode": 16,
+      "versionCode": 17,
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -38,6 +39,7 @@
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.VIBRATE",
+        "android.permission.CAMERA",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT",
@@ -52,10 +54,18 @@
       "expo-font",
       "expo-sharing",
       "expo-updates",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow KadaBook to use the camera to scan product barcodes.",
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ]
     ],
     "extra": {
-      "buildTag": "ota-check-nov2-2145",
+      "buildTag": "logo-icon-v17",
       "eas": {
         "projectId": "5b5ed363-6013-43e8-b7a4-781000db2d75"
       }
