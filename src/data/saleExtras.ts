@@ -43,8 +43,11 @@ export type SaleExtras = {
   editedAt?: number;
   /** Received at the counter on a credit bill. The balance is amount - paidAmount. */
   paidAmount?: number;
-  /** Kitchen & Stock: the branch that made the sale. */
+  /** The branch that made the sale. */
   branchId?: string;
+  /** Who made the sale: their Firebase uid, and their name at the time. */
+  soldByUid?: string;
+  soldByName?: string;
 };
 
 export type ExpenseExtras = { note?: string; createdAt?: number; branchId?: string };

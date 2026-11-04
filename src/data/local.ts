@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeBooks } from '../lib/booksNormalize';
+import { branchDayId } from '../lib/dayKey';
 import { fifoSettledIds } from '../lib/shopPlus';
 import { expenseCategoriesForShop, normalizeCustomExpenseCategory } from '../lib/expenseCategories';
 import {
@@ -310,6 +311,20 @@ export const localRepository: Repository = {
     if (closedAt == null) delete closedDays[dayKey];
     else closedDays[dayKey] = closedAt;
     books.meta = { ...books.meta, closedDays };
+    await writeBooks(uid, books);
+  },
+  async setBranchOpening(uid, branchId, dayKey, amount) {
+    const books = await readBooks(uid);
+    const rowId = branchDayId(branchId, dayKey);
+    const row = { ...books.meta.branchDays?.[rowId], branchId, day: dayKey, opening: Math.round(amount) };
+    books.meta = { ...books.meta, branchDays: { ...(books.meta.branchDays ?? {}), [rowId]: row } };
+    await writeBooks(uid, books);
+  },
+  async setBranchClosed(uid, branchId, dayKey, closedAt) {
+    const books = await readBooks(uid);
+    const rowId = branchDayId(branchId, dayKey);
+    const row = { ...books.meta.branchDays?.[rowId], branchId, day: dayKey, closedAt };
+    books.meta = { ...books.meta, branchDays: { ...(books.meta.branchDays ?? {}), [rowId]: row } };
     await writeBooks(uid, books);
   },
   async setQuickSaleProfitPercent(uid, percent) {

@@ -194,7 +194,7 @@ export function KitchenScreen() {
     <Screen>
       <Header title="Kitchen & Stock" onBack={() => navigation.goBack()} />
       <View style={[styles.top, { backgroundColor: colors.canvas }]}>
-        <BranchChips branches={data.branches} value={scope} onChange={setScope} onAdd={can('manageBranches') ? () => setAddingBranch(true) : undefined} />
+        <BranchChips branches={k.visibleBranches} value={scope} onChange={setScope} allowAll={!k.branchLocked} onAdd={can('manageBranches') ? () => setAddingBranch(true) : undefined} />
         <View style={[styles.tabs, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
           {TABS.map((item) => {
             const on = tab === item.key;

@@ -303,11 +303,13 @@ export function MoreScreen() {
         </Section>
 
         <Section label="Shop tools">
-          <Row
-            title="Credit book"
-            subtitle="Customer dues, collect payments, WhatsApp reminders"
-            onPress={() => navigation.navigate('CreditBook')}
-          />
+          {can('collectCredit') ? (
+            <Row
+              title="Credit book"
+              subtitle="Customer dues, collect payments, WhatsApp reminders"
+              onPress={() => navigation.navigate('CreditBook')}
+            />
+          ) : null}
           {can('manageStock') && showKitchen ? (
             <Row
               title="Kitchen & Stock"
@@ -325,7 +327,7 @@ export function MoreScreen() {
           {can('manageStaff') ? (
             <Row
               title="Staff & roles"
-              subtitle="Cashier and manager logins, switch access on or off"
+              subtitle="Branches, cashier and manager logins, what each person can do"
               onPress={() => navigation.navigate('Staff')}
             />
           ) : null}

@@ -36,6 +36,9 @@ export type Repository = {
   setOpeningBalance(uid: string, dayKey: string, amount: number): Promise<void>;
   /** Soft day close. Pass null closedAt to resume (clear the mark). */
   setDayClosed(uid: string, dayKey: string, closedAt: number | null): Promise<void>;
+  /** The same two values for one branch. */
+  setBranchOpening(uid: string, branchId: string, dayKey: string, amount: number): Promise<void>;
+  setBranchClosed(uid: string, branchId: string, dayKey: string, closedAt: number | null): Promise<void>;
   setQuickSaleProfitPercent(uid: string, percent: number): Promise<void>;
   addCustomExpenseCategory(uid: string, name: string): Promise<string>;
   updateSale(uid: string, id: string, patch: { note?: string; customerName?: string; customerPhone?: string; paymentMode?: SaleExtras['paymentMode']; editedAt?: number; createdAt?: number }): Promise<void>;

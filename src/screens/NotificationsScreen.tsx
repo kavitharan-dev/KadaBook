@@ -2,6 +2,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Header, Screen } from '../components/ui';
 import { useBooks } from '../context/BooksContext';
+import { useVisibleBooks } from '../context/KitchenContext';
 import { useI18n } from '../context/LocaleContext';
 import { expenseCategoryMessage } from '../i18n';
 import { confirmDelete } from '../lib/confirm';
@@ -13,7 +14,8 @@ import { fonts } from '../theme/fonts';
 export function NotificationsScreen() {
   const styles = useStyleSheet(notificationsStyles);
   const navigation = useNavigation();
-  const { books, deleteSale, deleteExpense } = useBooks();
+  const { deleteSale, deleteExpense } = useBooks();
+  const books = useVisibleBooks();
   const { t, messages } = useI18n();
   const now = Date.now();
   const items = [

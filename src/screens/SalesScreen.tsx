@@ -11,6 +11,7 @@ import { useRole } from '../lib/roles';
 import { FillButton, Header, Screen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
+import { useVisibleBooks } from '../context/KitchenContext';
 import { useI18n } from '../context/LocaleContext';
 import { confirmDelete } from '../lib/confirm';
 import { formatDay, formatRs, formatTime, isSameDay, startOfDay, sum } from '../lib/format';
@@ -31,7 +32,8 @@ export function SalesScreen() {
     NativeStackNavigationProp<AppStackParamList>
   >>();
   const { user } = useAuth();
-  const { books, deleteSale, updateSale } = useBooks();
+  const { deleteSale, updateSale } = useBooks();
+  const books = useVisibleBooks();
   const toast = useToast();
   const { can } = useRole();
   const [editing, setEditing] = useState<Sale | null>(null);
@@ -118,6 +120,11 @@ export function SalesScreen() {
                         : formatTime(sale.createdAt)}
                     </Text>
                     <Text style={styles.summary}>{saleSummaryLine(sale)}</Text>
+                    {sale.soldByName ? (
+                      <Text style={styles.summary} numberOfLines={1}>
+                        {sale.soldByName}
+                      </Text>
+                    ) : null}
                     {sale.note ? (
                       <Text style={styles.summary} numberOfLines={1}>
                         📝 {sale.note}

@@ -113,6 +113,58 @@ export function BranchChips({
   );
 }
 
+/** Dropdown for the one branch a staff login belongs to. */
+export function BranchSelect({
+  branches,
+  value,
+  onChange,
+  allOption,
+  placeholder = 'Choose a branch',
+}: {
+  branches: Branch[];
+  value: string | undefined;
+  onChange: (next: string) => void;
+  /** Label for the "not tied to one branch" row and the value it sends. */
+  allOption?: { label: string; value: string };
+  placeholder?: string;
+}) {
+  const { colors } = useTheme();
+  const [open, setOpen] = useState(false);
+  const options = [
+    ...(allOption ? [{ id: allOption.value, label: allOption.label }] : []),
+    ...branches.map((b) => ({ id: b.id, label: b.isMain ? `★ ${b.name}` : b.name })),
+  ];
+  const chosen = options.find((o) => o.id === value);
+  return (
+    <View>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setOpen((v) => !v)}
+        style={[styles.input, styles.selectRow, { borderColor: colors.line, backgroundColor: colors.white }]}
+      >
+        <Text style={[styles.chipText, { color: chosen ? colors.ink : colors.muted }]} numberOfLines={1}>
+          {chosen?.label ?? placeholder}
+        </Text>
+        <Text style={{ color: colors.muted, fontFamily: fonts.bold }}>{open ? '▲' : '▼'}</Text>
+      </Pressable>
+      {open
+        ? options.map((option) => (
+            <Pressable
+              key={option.id}
+              onPress={() => {
+                setOpen(false);
+                if (option.id !== value) onChange(option.id);
+              }}
+              style={[styles.selectOption, { borderColor: colors.hairline, backgroundColor: option.id === value ? colors.keypad : colors.white }]}
+            >
+              <Text style={[styles.chipText, { color: colors.ink }]} numberOfLines={1}>{option.label}</Text>
+            </Pressable>
+          ))
+        : null}
+    </View>
+  );
+}
+
 /** Tap to choose a material from a searchable list. */
 export function MaterialSelect({
   materials,
@@ -292,6 +344,8 @@ const styles = StyleSheet.create({
   chip: { minHeight: 36, borderRadius: 999, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   chipText: { fontFamily: fonts.semibold, fontSize: 13 },
   chipRow: { gap: 8, paddingVertical: 2 },
+  selectRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  selectOption: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, marginTop: 4 },
   select: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
   selectText: { flex: 1, fontFamily: fonts.semibold, fontSize: 14 },
   option: { paddingVertical: 12, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth, gap: 2 },

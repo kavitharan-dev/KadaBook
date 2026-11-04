@@ -33,14 +33,16 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  where,
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
 import { accountIdentity, assertPassword, isPhoneAuthEmail, type AuthService, type Repository } from '../data/repository';
 import type { SignUpInput } from '../data/signUpTypes';
-import type { Books, Expense, Product, Sale, SaleLine, SaleReturn, SavedOrder, ShopUser, StaffMember, StaffRole } from '../data/types';
+import type { Books, BranchDay, Expense, PermissionOverrides, Product, Sale, SaleLine, SaleReturn, SavedOrder, ShopUser, StaffMember, StaffRole } from '../data/types';
 import { type PaymentMode, type SaleDiscount, type SaleExtras } from '../data/saleExtras';
 import { normalizeBooks } from '../lib/booksNormalize';
+import { branchDayId, dayKey as dayKeyOf } from '../lib/dayKey';
 import { fifoSettledIds } from '../lib/shopPlus';
 import { expenseCategoriesForShop, normalizeCustomExpenseCategory } from '../lib/expenseCategories';
 import {
@@ -180,7 +182,37 @@ async function readProfile(uid: string, fallbackEmail: string): Promise<ShopUser
   };
 }
 
-type StaffLink = { shopUid: string; role: StaffRole; name: string; active: boolean };
+type StaffLink = {
+  shopUid: string;
+  role: Exclude<StaffRole, 'owner'>;
+  name: string;
+  active: boolean;
+  branchId?: string;
+  permissions?: PermissionOverrides;
+};
+
+function readPermissions(raw: unknown): PermissionOverrides | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const rows = Object.entries(raw as Record<string, unknown>).filter(
+    (row): row is [string, boolean] => typeof row[1] === 'boolean',
+  );
+  return rows.length ? Object.fromEntries(rows) : undefined;
+}
+
+function readBranchId(raw: unknown) {
+  return typeof raw === 'string' && raw ? raw : undefined;
+}
+
+function staffLinkFrom(shopUid: string, data: Record<string, unknown>): StaffLink {
+  return {
+    shopUid,
+    role: data.role === 'manager' ? 'manager' : 'cashier',
+    name: typeof data.name === 'string' ? data.name : 'Staff',
+    active: data.active === true,
+    branchId: readBranchId(data.branchId),
+    permissions: readPermissions(data.permissions),
+  };
+}
 
 /** If this account is a staff login, the shop it belongs to and its role. */
 async function readStaffLink(authUid: string): Promise<StaffLink | null> {
@@ -190,17 +222,22 @@ async function readStaffLink(authUid: string): Promise<StaffLink | null> {
   const member = await getDoc(doc(firestore(), 'users', shopUid, 'members', authUid));
   const data = member.data();
   if (!data) return null;
+  return staffLinkFrom(shopUid, data);
+}
+
+function staffFields(authUid: string, link: StaffLink) {
   return {
-    shopUid,
-    role: data.role === 'manager' ? 'manager' : 'cashier',
-    name: typeof data.name === 'string' ? data.name : 'Staff',
-    active: data.active === true,
+    role: link.role,
+    authUid,
+    staffName: link.name,
+    ...(link.branchId ? { branchId: link.branchId } : {}),
+    ...(link.permissions ? { permissions: link.permissions } : {}),
   };
 }
 
 async function staffProfile(authUid: string, email: string, link: StaffLink): Promise<ShopUser> {
   const shop = await readProfile(link.shopUid, email);
-  return { ...shop, email, role: link.role, authUid, staffName: link.name };
+  return { ...shop, email, ...staffFields(authUid, link) };
 }
 
 const STAFF_OFF = 'Your staff login is switched off. Ask the shop owner to turn it back on.';
@@ -208,7 +245,10 @@ const STAFF_OFF = 'Your staff login is switched off. Ask the shop owner to turn 
 export const cloudAuth: AuthService = {
   cloud: true,
   subscribe(onUser) {
-    return onAuthStateChanged(firebaseAuth(), async (user) => {
+    let stopMember = () => {};
+    const stopAuth = onAuthStateChanged(firebaseAuth(), async (user) => {
+      stopMember();
+      stopMember = () => {};
       if (!user) {
         onUser(null);
         return;
@@ -222,20 +262,42 @@ export const cloudAuth: AuthService = {
             onUser(null);
             return;
           }
+          let profile: ShopUser;
           try {
-            onUser(await staffProfile(user.uid, user.email ?? '', link));
+            profile = await staffProfile(user.uid, user.email ?? '', link);
           } catch {
             // Shop profile may be briefly unreadable; still bind to the shop, never to a blank owner account.
-            onUser({
+            profile = {
               uid: link.shopUid,
               email: user.email ?? '',
               shopName: 'My Shop',
               phone: null,
-              role: link.role,
-              authUid: user.uid,
-              staffName: link.name,
-            });
+              ...staffFields(user.uid, link),
+            };
           }
+          if (firebaseAuth().currentUser?.uid !== user.uid) return;
+          onUser(profile);
+          // The owner's changes to role, branch or ticks apply at once, not at the next sign-in.
+          let current = JSON.stringify(link);
+          stopMember = onSnapshot(
+            doc(firestore(), 'users', link.shopUid, 'members', user.uid),
+            (snap) => {
+              const data = snap.data();
+              if (!data) return;
+              const next = staffLinkFrom(link.shopUid, data);
+              if (!next.active) {
+                void firebaseSignOut(firebaseAuth());
+                return;
+              }
+              const nextKey = JSON.stringify(next);
+              if (nextKey === current) return;
+              current = nextKey;
+              const { branchId: _branch, permissions: _permissions, ...shop } = profile;
+              profile = { ...shop, ...staffFields(user.uid, next) };
+              onUser(profile);
+            },
+            () => undefined,
+          );
           return;
         }
       } catch {
@@ -258,6 +320,10 @@ export const cloudAuth: AuthService = {
           }),
         );
     });
+    return () => {
+      stopMember();
+      stopAuth();
+    };
   },
   async signIn(identity, password) {
     assertPassword(password);
@@ -278,9 +344,7 @@ export const cloudAuth: AuthService = {
             email,
             shopName: 'My Shop',
             phone: null,
-            role: link.role,
-            authUid: cred.user.uid,
-            staffName: link.name,
+            ...staffFields(cred.user.uid, link),
           };
         }
       }
@@ -417,6 +481,8 @@ function readSaleExtras(data: Record<string, unknown>): SaleExtras {
   if (Number(data.paidAmount) > 0) extras.paidAmount = Number(data.paidAmount);
   if (data.editedAt != null) extras.editedAt = millis(data.editedAt);
   if (typeof data.branchId === 'string' && data.branchId) extras.branchId = data.branchId;
+  if (typeof data.soldByUid === 'string' && data.soldByUid) extras.soldByUid = data.soldByUid;
+  if (typeof data.soldByName === 'string' && data.soldByName) extras.soldByName = data.soldByName;
   return extras;
 }
 
@@ -511,6 +577,7 @@ export const cloudRepository: Repository = {
     let nextInvoice = 1;
     let openingBalances: Record<string, number> = {};
     let closedDays: Record<string, number> = {};
+    let branchDays: Record<string, BranchDay> = {};
     let quickSaleProfitPercent: number | undefined;
     let customExpenseCategories: string[] = [];
 
@@ -527,7 +594,7 @@ export const cloudRepository: Repository = {
           staff,
           returns,
           audit,
-          meta: { nextInvoice, openingBalances, closedDays, quickSaleProfitPercent, customExpenseCategories },
+          meta: { nextInvoice, openingBalances, closedDays, branchDays, quickSaleProfitPercent, customExpenseCategories },
         }),
       );
 
@@ -626,6 +693,25 @@ export const cloudRepository: Repository = {
       (error) => fail(error.message),
     );
 
+    // Enough history for the monthly report; older days are never shown.
+    const oldestBranchDay = dayKeyOf(Date.now() - 62 * 24 * 60 * 60 * 1000);
+    const unsubBranchDays = onSnapshot(
+      query(collection(firestore(), 'users', uid, 'branchDays'), where('day', '>=', oldestBranchDay)),
+      (snap) => {
+        branchDays = Object.fromEntries(
+          snap.docs.map((item) => {
+            const data = item.data() as Record<string, unknown>;
+            const row: BranchDay = { branchId: String(data.branchId ?? ''), day: String(data.day ?? '') };
+            if (typeof data.opening === 'number') row.opening = Math.round(data.opening);
+            if (typeof data.closedAt === 'number' || data.closedAt === null) row.closedAt = data.closedAt;
+            return [item.id, row];
+          }),
+        );
+        push();
+      },
+      (error) => fail(error.message),
+    );
+
     const listen = <T,>(name: string, map: (id: string, data: Record<string, unknown>) => T, set: (rows: T[]) => void) =>
       watchCollection(uid, name, map, (rows) => {
         set(rows);
@@ -648,6 +734,7 @@ export const cloudRepository: Repository = {
       amount: Number(data.amount) || 0,
       method: data.method === 'card' ? 'card' as const : 'cash' as const,
       note: typeof data.note === 'string' ? data.note : undefined,
+      branchId: readBranchId(data.branchId),
       createdAt: millis(data.createdAt),
     }), (rows) => {
       creditPayments = rows;
@@ -668,6 +755,8 @@ export const cloudRepository: Repository = {
       role: (data.role === 'manager' ? 'manager' : 'cashier') as StaffMember['role'],
       active: data.active === true,
       login: typeof data.login === 'string' ? data.login : undefined,
+      branchId: readBranchId(data.branchId),
+      permissions: readPermissions(data.permissions),
       createdAt: millis(data.createdAt),
     }), (rows) => {
       staff = rows;
@@ -696,6 +785,7 @@ export const cloudRepository: Repository = {
 
     return () => {
       unsubProfile();
+      unsubBranchDays();
       unsubSales();
       unsubExpenses();
       unsubProducts();
@@ -840,6 +930,20 @@ export const cloudRepository: Repository = {
     // updateDoc field path is reliable for nested day keys (YYYY-MM-DD).
     await updateDoc(ref, { [`closedDays.${dayKey}`]: Math.round(closedAt) });
   },
+  async setBranchOpening(uid, branchId, dayKey, amount) {
+    await setDoc(
+      doc(firestore(), 'users', uid, 'branchDays', branchDayId(branchId, dayKey)),
+      { branchId, day: dayKey, opening: Math.round(amount) },
+      { merge: true },
+    );
+  },
+  async setBranchClosed(uid, branchId, dayKey, closedAt) {
+    await setDoc(
+      doc(firestore(), 'users', uid, 'branchDays', branchDayId(branchId, dayKey)),
+      { branchId, day: dayKey, closedAt: closedAt == null ? null : Math.round(closedAt) },
+      { merge: true },
+    );
+  },
   async setQuickSaleProfitPercent(uid, percent) {
     const value = Math.min(100, Math.max(0, Math.round(percent)));
     await setDoc(doc(firestore(), 'users', uid), { quickSaleProfitPercent: value }, { merge: true });
@@ -913,6 +1017,7 @@ export const cloudRepository: Repository = {
       amount: input.amount,
       method: input.method,
       note: input.note,
+      branchId: input.branchId,
       createdAt: serverTimestamp(),
     }));
     await batch.commit();
@@ -1032,7 +1137,7 @@ function staffCreatorAuth() {
 
 export async function createStaffAccount(
   shopUid: string,
-  input: { name: string; identity: string; password: string; role: Exclude<StaffRole, 'owner'> },
+  input: { name: string; identity: string; password: string; role: Exclude<StaffRole, 'owner'>; branchId?: string },
 ) {
   const name = input.name.trim().slice(0, 60);
   if (!name) throw new Error('Enter the name of the staff member.');
@@ -1049,13 +1154,14 @@ export async function createStaffAccount(
     await firebaseSignOut(creator).catch(() => undefined);
   }
   const batch = writeBatch(firestore());
-  batch.set(doc(firestore(), 'users', shopUid, 'members', staffUid), {
+  batch.set(doc(firestore(), 'users', shopUid, 'members', staffUid), defined({
     name,
     role: input.role,
     active: true,
     login: phone ?? email,
+    branchId: input.branchId,
     createdAt: serverTimestamp(),
-  });
+  }));
   batch.set(doc(firestore(), 'staffIndex', staffUid), { shopUid });
   await batch.commit();
   return staffUid;
@@ -1064,7 +1170,13 @@ export async function createStaffAccount(
 export async function updateStaffMember(
   shopUid: string,
   staffUid: string,
-  patch: { role?: Exclude<StaffRole, 'owner'>; active?: boolean; name?: string },
+  patch: {
+    role?: Exclude<StaffRole, 'owner'>;
+    active?: boolean;
+    name?: string;
+    branchId?: string;
+    permissions?: PermissionOverrides;
+  },
 ) {
   const ref = doc(firestore(), 'users', shopUid, 'members', staffUid);
   const snap = await getDoc(ref);

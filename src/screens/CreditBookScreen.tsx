@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
+import { useRole } from '../lib/roles';
 import { useTheme } from '../context/ThemeContext';
 import {
   DEFAULT_CREDIT_SETTINGS,
@@ -154,6 +155,7 @@ export function CreditLedgerScreen() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const { books, collectPayment } = useBooks();
+  const { can } = useRole();
   const { customerId } = route.params;
 
   const customer = books.customers.find((c) => c.id === customerId);
@@ -286,7 +288,7 @@ export function CreditLedgerScreen() {
               label="Collect payment"
               color={colors.saleText}
               onPress={() => openPanel('collect')}
-              disabled={due <= 0}
+              disabled={due <= 0 || !can('collectCredit')}
             />
           </View>
           <View style={{ flex: 1 }}>

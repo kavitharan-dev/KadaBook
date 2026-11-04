@@ -361,7 +361,7 @@ export function MoveForm({
   return (
     <Sheet visible title={copy.title} subtitle={copy.sub} onClose={onClose} actionLabel={copy.action} onAction={submit} busy={busy} error={error}>
       <Label>{kind === 'transfer' ? 'FROM BRANCH' : 'BRANCH'}</Label>
-      <BranchChips branches={data.branches} value={branchId} onChange={(v) => setBranchId(v)} allowAll={false} />
+      <BranchChips branches={k.visibleBranches} value={branchId} onChange={(v) => setBranchId(v)} allowAll={false} />
       {kind === 'transfer' ? (
         <>
           <Label>TO BRANCH</Label>

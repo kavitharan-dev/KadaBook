@@ -3,9 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from './AuthContext';
 import { useBooks } from './BooksContext';
 import { kitchenRepo, type MaterialInput, type NewMove } from '../data/kitchenRepo';
-import { EMPTY_KITCHEN, type BranchScope, type KitchenData, type MaterialQty } from '../data/kitchenTypes';
+import { EMPTY_KITCHEN, type Branch, type BranchScope, type KitchenData, type MaterialQty } from '../data/kitchenTypes';
 import { RAW_MATERIAL_CATALOG } from '../data/rawMaterialCatalog';
-import type { SaleLine } from '../data/types';
+import { ALL_BRANCHES, type Books, type SaleLine } from '../data/types';
+import { scopeBooks } from '../lib/branchScope';
 import { linesCost, nextAvgCost, readyMaterialFor, roundMoney, roundQty, saleUsage, stockLevels, valueAt } from '../lib/kitchenOps';
 
 export type PurchaseLine = { materialId: string; qty: number; unitCost: number };
@@ -19,6 +20,12 @@ type KitchenValue = {
   setScope: (scope: BranchScope) => void;
   /** The branch new sales, expenses and stock entries go to. */
   activeBranchId: string | null;
+  /** Staff tied to one branch: the switcher is gone and everything shows that branch. */
+  branchLocked: boolean;
+  /** The branches this login may look at and pick from. */
+  visibleBranches: Branch[];
+  /** More than one branch, and looking at them all added up (no single branch to close). */
+  viewAll: boolean;
   addBranch: (name: string) => Promise<string>;
   renameBranch: (id: string, name: string) => Promise<void>;
   saveMaterial: (id: string | null, input: MaterialInput) => Promise<string>;
@@ -60,7 +67,7 @@ function assertLines<T extends { qty: number }>(lines: T[]): T[] {
 
 export function KitchenProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { books, updateProduct, logAudit } = useBooks();
+  const { books, updateProduct, logAudit, setDayBranch } = useBooks();
   // updateProduct used when a recipe is saved so the product becomes Menu / Food.
   const uid = user?.uid;
   const [data, setData] = useState<KitchenData>(EMPTY_KITCHEN);
@@ -91,19 +98,31 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [uid]);
 
+  const memberBranch = user?.branchId && user.branchId !== ALL_BRANCHES ? user.branchId : null;
+  const lockedBranchId = memberBranch && data.branches.some((b) => b.id === memberBranch) ? memberBranch : null;
+
   const setScope = useCallback((next: BranchScope) => {
+    if (memberBranch) return;
     setScopeState(next);
     AsyncStorage.setItem(SCOPE_KEY, next).catch(() => undefined);
-  }, []);
+  }, [memberBranch]);
+
+  const mainId = data.branches.find((b) => b.isMain)?.id ?? data.branches[0]?.id ?? null;
+  const scopeValid = scope === 'all' || data.branches.some((b) => b.id === scope);
+  const activeBranchId = lockedBranchId ?? (scopeValid && scope !== 'all' ? scope : mainId);
+
+  // Opening, close and new entries in BooksContext follow the branch chosen here.
+  useEffect(() => {
+    const name = data.branches.find((b) => b.id === activeBranchId)?.name;
+    setDayBranch(activeBranchId ? { id: activeBranchId, isMain: activeBranchId === mainId, name } : null);
+  }, [activeBranchId, mainId, data.branches, setDayBranch]);
 
   const value = useMemo<KitchenValue>(() => {
     const need = () => {
       if (!uid) throw new Error('Sign in first.');
       return uid;
     };
-    const mainId = data.branches.find((b) => b.isMain)?.id ?? data.branches[0]?.id ?? null;
-    const scopeValid = scope === 'all' || data.branches.some((b) => b.id === scope);
-    const activeBranchId = scopeValid && scope !== 'all' ? scope : mainId;
+    const shownScope: BranchScope = lockedBranchId ?? (scopeValid ? scope : 'all');
     const material = (id: string) => {
       const found = data.materials.find((m) => m.id === id);
       if (!found) throw new Error('That material no longer exists.');
@@ -120,9 +139,12 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
       data,
       loading,
       error,
-      scope: scopeValid ? scope : 'all',
+      scope: shownScope,
       setScope,
       activeBranchId,
+      branchLocked: lockedBranchId !== null,
+      visibleBranches: lockedBranchId ? data.branches.filter((b) => b.id === lockedBranchId) : data.branches,
+      viewAll: data.branches.length > 1 && shownScope === 'all',
 
       async addBranch(name) {
         const clean = name.trim();
@@ -464,7 +486,7 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
         logAudit('Stock entry deleted', move ? `${move.type} at ${branchName(move.branchId)}: ${describe(move.qty)}` : id);
       },
     };
-  }, [uid, data, loading, error, scope, setScope, logAudit, books.products, updateProduct]);
+  }, [uid, data, loading, error, scope, scopeValid, setScope, activeBranchId, lockedBranchId, logAudit, books.products, updateProduct]);
 
   return <KitchenContext.Provider value={value}>{children}</KitchenContext.Provider>;
 }
@@ -473,6 +495,19 @@ export function useKitchen() {
   const value = useContext(KitchenContext);
   if (!value) throw new Error('useKitchen must be used inside KitchenProvider');
   return value;
+}
+
+/**
+ * The books for lists a login tied to one branch should only see their part of.
+ * Everyone else gets the whole shop. Credit balances keep using useBooks: they are shop-wide.
+ */
+export function useVisibleBooks(): Books {
+  const { books } = useBooks();
+  const { branchLocked, scope, data } = useKitchen();
+  return useMemo(
+    () => (branchLocked ? scopeBooks(books, scope, data.branches) : books),
+    [books, branchLocked, scope, data.branches],
+  );
 }
 
 /** Cost and margin of one menu item from its recipe. */

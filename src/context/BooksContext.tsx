@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 import { useAuth } from './AuthContext';
 import { repository, usingCloud } from '../data/services';
 import { waitForFirebaseAuth } from '../firebase/client';
 import {
+  ALL_BRANCHES,
   EMPTY_BOOKS,
   type BillCheckoutInput,
   type Books,
@@ -15,8 +16,9 @@ import {
 import { SIMPLE_SELL_CATALOG } from '../data/simpleSellCatalog';
 import { usesKitchenStock } from '../lib/shopType';
 import { assertBillItems, billTotal, stampSaleLineCosts } from '../lib/saleOps';
-import { dayKey, isDayClosed, openingBalanceForDay } from '../lib/dayKey';
+import { branchDayId, dayClosedAt, dayKey, isDayClosed, openingBalanceForDay, type DayBranch } from '../lib/dayKey';
 import { formatRs } from '../lib/format';
+import { can, type Permission } from '../lib/roles';
 import { customerBalance, findCustomerByPhone } from '../lib/shopPlus';
 import {
   cleanExpenseExtras,
@@ -32,7 +34,10 @@ type BooksContextValue = {
   books: Books;
   loading: boolean;
   error: string | null;
-  /** Soft close: new sales blocked until resumeToday. */
+  /** The branch this device's opening, close and new entries apply to. Set by KitchenProvider. */
+  dayBranch: DayBranch;
+  setDayBranch: (branch: DayBranch) => void;
+  /** Soft close of dayBranch: new sales blocked until resumeToday. */
   todayClosed: boolean;
   closeToday: () => Promise<void>;
   resumeToday: () => Promise<void>;
@@ -88,6 +93,12 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   /** Bumps at midnight / app resume so todayClosed does not stick after calendar day change. */
   const [calendarDay, setCalendarDay] = useState(() => dayKey());
   const removingSampleProducts = useRef(false);
+  const [dayBranch, setDayBranchState] = useState<DayBranch>(null);
+  const setDayBranch = useCallback((next: DayBranch) => {
+    setDayBranchState((prev) =>
+      prev?.id === next?.id && prev?.isMain === next?.isMain && prev?.name === next?.name ? prev : next,
+    );
+  }, []);
 
   useEffect(() => {
     const syncDay = () => setCalendarDay(dayKey());
@@ -149,7 +160,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || loading || removingSampleProducts.current) return;
     if (!usesKitchenStock(user.shopType)) return;
-    if (user.role === 'cashier') return;
+    if (!can(user, 'manageProducts')) return;
     const sampleNames = new Set(SIMPLE_SELL_CATALOG.map((row) => row.name.trim().toLowerCase()));
     const toDelete = books.products.filter((p) => sampleNames.has(p.name.trim().toLowerCase()));
     if (!toDelete.length) return;
@@ -176,7 +187,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || loading || repairingFoodSellKind.current) return;
     if (!usesKitchenStock(user.shopType)) return;
-    if (user.role === 'cashier') return;
+    if (!can(user, 'manageProducts')) return;
     const broken = books.products.filter(
       (p) => (p.category ?? '').trim().toLowerCase() === 'food' && p.sellKind !== 'menu',
     );
@@ -214,10 +225,59 @@ export function BooksProvider({ children }: { children: ReactNode }) {
   const value = useMemo<BooksContextValue>(() => {
     const uid = user?.uid;
     // Only *this* calendar day counts — yesterday's close never shows Resume.
-    const todayClosed = isDayClosed(books.meta, Date.now());
+    const todayClosed = isDayClosed(books.meta, Date.now(), dayBranch);
 
     function assertDayOpen() {
-      if (isDayClosed(books.meta, Date.now())) throw new Error(DAY_CLOSED_MESSAGE);
+      if (isDayClosed(books.meta, Date.now(), dayBranch)) throw new Error(DAY_CLOSED_MESSAGE);
+    }
+
+    function assertCan(permission: Permission) {
+      if (!can(user, permission)) throw new Error('You do not have permission to do this. Ask the shop owner.');
+    }
+
+    /** A staff member tied to one branch always works there, whatever the screen sends. */
+    const lockedBranchId = user?.branchId && user.branchId !== ALL_BRANCHES ? user.branchId : undefined;
+    const entryBranchId = (asked?: string) => lockedBranchId ?? asked ?? dayBranch?.id;
+
+    function saleStamp(clean: SaleExtras): SaleExtras {
+      const branchId = entryBranchId(clean.branchId);
+      return {
+        ...clean,
+        ...(branchId ? { branchId } : {}),
+        ...(uid && user ? { soldByUid: user.authUid ?? uid, soldByName: user.staffName ?? 'Owner' } : {}),
+      };
+    }
+
+    /** Writes a day's close mark to the local copy so banners flip before the snapshot lands. */
+    function patchClosed(key: string, closedAt: number | null) {
+      setBooks((prev) => {
+        if (dayBranch) {
+          const id = branchDayId(dayBranch.id, key);
+          const row = { ...prev.meta.branchDays?.[id], branchId: dayBranch.id, day: key, closedAt };
+          return { ...prev, meta: { ...prev.meta, branchDays: { ...(prev.meta.branchDays ?? {}), [id]: row } } };
+        }
+        const closedDays = { ...(prev.meta.closedDays ?? {}) };
+        if (closedAt == null) delete closedDays[key];
+        else closedDays[key] = closedAt;
+        return { ...prev, meta: { ...prev.meta, closedDays } };
+      });
+    }
+
+    async function writeClosed(shopUid: string, key: string, closedAt: number | null) {
+      if (!dayBranch) {
+        await repository.setDayClosed(shopUid, key, closedAt);
+        return;
+      }
+      await repository.setBranchClosed(shopUid, dayBranch.id, key, closedAt);
+      // A close from before branches is cleared too, for those allowed to touch the shop-wide marks.
+      if (closedAt == null && dayBranch.isMain && !lockedBranchId && books.meta.closedDays?.[key]) {
+        await repository.setDayClosed(shopUid, key, null);
+      }
+    }
+
+    async function writeOpening(shopUid: string, key: string, value: number) {
+      if (dayBranch) await repository.setBranchOpening(shopUid, dayBranch.id, key, value);
+      else await repository.setOpeningBalance(shopUid, key, value);
     }
 
     function logAudit(action: string, detail: string) {
@@ -253,54 +313,42 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       books,
       loading,
       error,
+      dayBranch,
+      setDayBranch,
       todayClosed,
       async closeToday() {
         if (!uid) return;
+        assertCan('closeDay');
         const key = dayKey();
         const closedAt = Date.now();
-        const before = books.meta.closedDays?.[key];
+        const before = dayClosedAt(books.meta, closedAt, dayBranch);
         // Optimistic UI so Home / New Sale banner flip before the snapshot lands.
-        setBooks((prev) => ({
-          ...prev,
-          meta: { ...prev.meta, closedDays: { ...(prev.meta.closedDays ?? {}), [key]: closedAt } },
-        }));
+        patchClosed(key, closedAt);
         try {
-          await repository.setDayClosed(uid, key, closedAt);
-          logAudit('Day closed', key);
+          await writeClosed(uid, key, closedAt);
+          logAudit('Day closed', dayBranch ? `${key} (${dayBranch.name ?? dayBranch.id})` : key);
         } catch (error) {
-          setBooks((prev) => {
-            const closedDays = { ...(prev.meta.closedDays ?? {}) };
-            if (before == null) delete closedDays[key];
-            else closedDays[key] = before;
-            return { ...prev, meta: { ...prev.meta, closedDays } };
-          });
+          patchClosed(key, before);
           throw error;
         }
       },
       async resumeToday() {
         if (!uid) return;
+        assertCan('closeDay');
         const key = dayKey();
-        const before = books.meta.closedDays?.[key];
-        setBooks((prev) => {
-          const closedDays = { ...(prev.meta.closedDays ?? {}) };
-          delete closedDays[key];
-          return { ...prev, meta: { ...prev.meta, closedDays } };
-        });
+        const before = dayClosedAt(books.meta, Date.now(), dayBranch);
+        patchClosed(key, null);
         try {
-          await repository.setDayClosed(uid, key, null);
-          logAudit('Day resumed', key);
+          await writeClosed(uid, key, null);
+          logAudit('Day resumed', dayBranch ? `${key} (${dayBranch.name ?? dayBranch.id})` : key);
         } catch (error) {
-          if (before != null) {
-            setBooks((prev) => ({
-              ...prev,
-              meta: { ...prev.meta, closedDays: { ...(prev.meta.closedDays ?? {}), [key]: before } },
-            }));
-          }
+          patchClosed(key, before);
           throw error;
         }
       },
       async addQuickSale(amount, items, extras) {
         if (!uid) return;
+        assertCan('addSale');
         assertDayOpen();
         const rawLines = items?.filter((line) => line.name.trim() && line.unitPrice > 0) ?? [];
         const lines = rawLines.length ? stampSaleLineCosts(rawLines, books.products) : [];
@@ -314,21 +362,23 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         await repository.addQuickSale(uid, {
           amount: subtotal,
           items: lines.length ? lines : undefined,
-          ...clean,
+          ...saleStamp(clean),
         });
       },
       async checkoutBill(items, extras) {
         if (!uid) return;
+        assertCan('addSale');
         assertDayOpen();
         const stamped = stampSaleLineCosts(items, books.products);
         // The repository works out the bill total; it takes `discount` off that total.
         const clean = await attachCustomer(uid, extras?.customerName?.trim(), cleanSaleExtras(extras, billTotal(stamped)));
-        const payload: BillCheckoutInput = { items: stamped, ...clean };
+        const payload: BillCheckoutInput = { items: stamped, ...saleStamp(clean) };
         await repository.checkoutBill(uid, payload);
       },
       logAudit,
       async updateSale(id, patch) {
         if (!uid) return;
+        assertCan('editSale');
         const before = books.sales.find((s) => s.id === id);
         const note = patch.note?.trim().slice(0, 120);
         if (patch.createdAt !== undefined && (!Number.isFinite(patch.createdAt) || patch.createdAt > Date.now() + 60_000)) {
@@ -351,6 +401,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       },
       async importProducts(rows) {
         if (!uid) return 0;
+        assertCan('manageProducts');
         if (!rows.length) throw new Error('No products to import.');
         const count = await repository.importProducts(uid, rows);
         logAudit('Products imported', `${count} products from a file`);
@@ -358,23 +409,29 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       },
       async deleteSale(id) {
         if (!uid) return;
+        assertCan('deleteSale');
         const label = saleLabel(id);
         await repository.deleteSale(uid, id);
         logAudit('Sale deleted', label);
       },
       async addExpense(amount, category, extra) {
         if (!uid) return;
+        assertCan('addExpense');
         assertAmount(amount);
-        await repository.addExpense(uid, Math.round(amount), category, cleanExpenseExtras(extra));
+        const clean = cleanExpenseExtras(extra);
+        const branchId = entryBranchId(clean.branchId);
+        await repository.addExpense(uid, Math.round(amount), category, { ...clean, ...(branchId ? { branchId } : {}) });
       },
       async deleteExpense(id) {
         if (!uid) return;
+        assertCan('addExpense');
         const expense = books.expenses.find((e) => e.id === id);
         await repository.deleteExpense(uid, id);
         logAudit('Expense deleted', expense ? `${expense.category} Rs. ${expense.amount}` : id);
       },
       async addProduct(input) {
         if (!uid) return;
+        assertCan('manageProducts');
         const trimmed = input.name.trim();
         if (!trimmed) throw new Error('Enter a product name.');
         if (!Number.isFinite(input.sellingPrice) || input.sellingPrice < 0) {
@@ -396,12 +453,14 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       },
       async deleteProduct(id) {
         if (!uid) return;
+        assertCan('manageProducts');
         const product = books.products.find((x) => x.id === id);
         await repository.deleteProduct(uid, id);
         logAudit('Product deleted', product?.name ?? id);
       },
       async updateProduct(id, input) {
         if (!uid) return;
+        assertCan('manageProducts');
         const trimmed = input.name.trim();
         if (!trimmed) throw new Error('Enter a product name.');
         if (!Number.isFinite(input.sellingPrice) || input.sellingPrice < 0) {
@@ -430,6 +489,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       },
       async saveOrder(items, info) {
         if (!uid) return;
+        assertCan('addSale');
         await repository.saveOrder(uid, items, info);
       },
       async deleteSavedOrder(id) {
@@ -439,15 +499,15 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       async setTodayOpeningBalance(amount) {
         if (!uid) return;
         const value = Math.max(0, Math.round(amount));
-        await repository.setOpeningBalance(uid, dayKey(), value);
+        await writeOpening(uid, dayKey(), value);
       },
       async editTodayOpeningBalance(amount) {
         if (!uid) return;
         if ((user?.role ?? 'owner') !== 'owner') throw new Error('Only the shop owner can edit the opening balance.');
         const value = Math.max(0, Math.round(amount));
-        const before = openingBalanceForDay(books.meta);
+        const before = openingBalanceForDay(books.meta, Date.now(), dayBranch);
         if (value === before) return;
-        await repository.setOpeningBalance(uid, dayKey(), value);
+        await writeOpening(uid, dayKey(), value);
         logAudit('Opening balance changed', `${formatRs(before)} → ${formatRs(value)}`);
       },
       async setQuickSaleProfitPercent(percent) {
@@ -461,14 +521,22 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       },
       async collectPayment(customerId, amount, method, note) {
         if (!uid) return;
+        assertCan('collectCredit');
         assertAmount(amount);
         const value = Math.round(amount);
         const due = customerBalance(books, customerId);
         if (value > due) throw new Error(`This customer owes only ${formatRs(due)}.`);
-        await repository.addCreditPayment(uid, { customerId, amount: value, method, note: note?.trim() || undefined });
+        await repository.addCreditPayment(uid, {
+          customerId,
+          amount: value,
+          method,
+          note: note?.trim() || undefined,
+          branchId: entryBranchId(),
+        });
       },
       async addReturn(input) {
         if (!uid) return;
+        assertCan('editSale');
         const refund = Math.round(input.refundAmount);
         assertAmount(refund);
         await repository.addReturn(uid, { ...input, refundAmount: refund, items: input.items });
@@ -497,7 +565,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         logAudit('Supplier paid', `${row?.name ?? supplierId}: Rs. ${Math.round(amount)}`);
       },
     };
-  }, [books, calendarDay, error, loading, user]);
+  }, [books, calendarDay, dayBranch, error, loading, setDayBranch, user]);
 
   return <BooksContext.Provider value={value}>{children}</BooksContext.Provider>;
 }

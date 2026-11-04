@@ -97,6 +97,9 @@ export type Messages = {
     closeNetLoss: string;
     closeNetProfitHint: string;
     closeOpeningCash: string;
+    pickBranchFirst: string;
+    branchSalesTitle: string;
+    cashierUnknown: string;
     closeCardSales: string;
     closeCashSales: string;
     closeExpectedCash: string;

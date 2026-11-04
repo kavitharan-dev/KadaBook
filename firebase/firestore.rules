@@ -115,6 +115,45 @@ service cloud.firestore {
       return isShopMember(uid) && memberDoc(uid).data.role == 'manager';
     }
 
+    /**
+     * Role template plus the owner's ticks. Keep the two lists in step with src/lib/roles.ts.
+     * 'editSale' also covers deleting bills.
+     */
+    function staffPerm(uid, perm) {
+      let member = memberDoc(uid).data;
+      let cashier = ['addSale', 'collectCredit', 'closeDay'];
+      let manager = ['addSale', 'collectCredit', 'closeDay', 'editSale', 'addExpense', 'manageProducts', 'manageStock', 'viewReports'];
+      let base = member.role == 'manager' ? perm in manager : perm in cashier;
+      return member.get('permissions', {}).get(perm, base) == true;
+    }
+
+    /** The owner can do everything; staff need the permission. */
+    function actorCan(uid, perm) {
+      return isShopOwner(uid) || (isShopMember(uid) && staffPerm(uid, perm));
+    }
+
+    /** Branch a staff login is tied to. 'all' (or none, for older logins) means any branch. */
+    function memberBranch(uid) {
+      return memberDoc(uid).data.get('branchId', 'all');
+    }
+
+    function branchAllowed(uid, branchId) {
+      return isShopOwner(uid) || memberBranch(uid) == 'all' || memberBranch(uid) == branchId;
+    }
+
+    /** Staff writes to the shop profile: invoice counter and the shop-wide day marks only. */
+    function staffProfileWrite(uid) {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let openingDiff = request.resource.data.get('openingBalances', {}).diff(resource.data.get('openingBalances', {}));
+      return changed.hasOnly(['nextInvoice', 'openingBalances', 'closedDays'])
+        && (!changed.hasAny(['nextInvoice']) || (staffPerm(uid, 'addSale') && request.resource.data.nextInvoice is number))
+        && (!changed.hasAny(['closedDays']) || (staffPerm(uid, 'closeDay') && memberBranch(uid) == 'all'))
+        // Add a day's opening balance, never change a saved one.
+        && (!changed.hasAny(['openingBalances']) || memberBranch(uid) == 'all')
+        && openingDiff.changedKeys().size() == 0
+        && openingDiff.removedKeys().size() == 0;
+    }
+
     // ── Admin-only collections ──
     match /admins/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
@@ -182,15 +221,11 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll(['shopName'])
         && (!('status' in request.resource.data) || request.resource.data.status == 'pending');
 
-      // Owner may change shop profile (not status/overrides). Staff may only write day marks.
+      // Owner may change shop profile (not status/overrides). Staff may only write the invoice counter and day marks.
       allow update: if isAdmin()
         || (isShopOwner(uid)
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'rejectReason', 'overrides', 'overrideReason']))
-        // Staff may add a day's opening balance but only the owner may change a saved one.
-        || (isShopMember(uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openingBalances', 'closedDays'])
-          && request.resource.data.get('openingBalances', {}).diff(resource.data.get('openingBalances', {})).changedKeys().size() == 0
-          && request.resource.data.get('openingBalances', {}).diff(resource.data.get('openingBalances', {})).removedKeys().size() == 0);
+        || (isShopMember(uid) && staffProfileWrite(uid));
 
       allow delete: if false;
 
@@ -198,22 +233,54 @@ service cloud.firestore {
         allow read, write: if isShopActor(uid);
       }
 
+      // One branch on one day: its opening balance and close mark (document id `${branchId}_${day}`).
+      match /branchDays/{dayId} {
+        allow read: if isShopActor(uid);
+        allow delete: if false;
+        allow create: if isShopActor(uid)
+          && dayId == request.resource.data.branchId + '_' + request.resource.data.day
+          && branchAllowed(uid, request.resource.data.branchId)
+          && request.resource.data.keys().hasOnly(['branchId', 'day', 'opening', 'closedAt'])
+          && (!('opening' in request.resource.data) || request.resource.data.opening is number)
+          && (!('closedAt' in request.resource.data) || actorCan(uid, 'closeDay'));
+        allow update: if isShopActor(uid)
+          && branchAllowed(uid, resource.data.branchId)
+          && request.resource.data.branchId == resource.data.branchId
+          && request.resource.data.day == resource.data.day
+          && request.resource.data.keys().hasOnly(['branchId', 'day', 'opening', 'closedAt'])
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['closedAt']) || actorCan(uid, 'closeDay'))
+          && (!('opening' in request.resource.data) || request.resource.data.opening is number)
+          // Staff may add the day's opening balance; only the owner may change a saved one.
+          && (isShopOwner(uid)
+            || !('opening' in resource.data)
+            || request.resource.data.get('opening', null) == resource.data.opening);
+      }
+
       match /sales/{saleId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
-        allow create: if isShopActor(uid)
+        allow delete: if actorCan(uid, 'editSale');
+        allow create: if actorCan(uid, 'addSale')
           && shopCanFeature(uid, 'addSale')
           && request.resource.data.amount is number
           && request.resource.data.amount > 0
           && request.resource.data.amount < 100000000
-          && request.resource.data.createdAt is timestamp;
-        allow update: if false;
+          && request.resource.data.createdAt is timestamp
+          // A sale belongs to the staff member's own branch, and only they can sign it.
+          && branchAllowed(uid, request.resource.data.get('branchId', ''))
+          && (!('soldByUid' in request.resource.data) || request.resource.data.soldByUid == request.auth.uid);
+        // Edit note, customer or date; or mark a credit bill settled. Amounts, branch and cashier never change.
+        allow update: if (actorCan(uid, 'editSale')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'customerName', 'customerPhone', 'paymentMode', 'createdAt', 'editedAt'])
+            && request.resource.data.createdAt is timestamp)
+          || (actorCan(uid, 'collectCredit')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settled']));
       }
 
       match /expenses/{expenseId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
-        allow create: if (isShopOwner(uid) || isShopManager(uid))
+        allow delete: if actorCan(uid, 'addExpense');
+        allow create: if actorCan(uid, 'addExpense')
+          && branchAllowed(uid, request.resource.data.get('branchId', ''))
           && shopCanFeature(uid, 'addExpense')
           && request.resource.data.amount is number
           && request.resource.data.amount > 0
@@ -226,8 +293,8 @@ service cloud.firestore {
 
       match /products/{productId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
-        allow create, update: if (isShopOwner(uid) || isShopManager(uid))
+        allow delete: if actorCan(uid, 'manageProducts');
+        allow create: if actorCan(uid, 'manageProducts')
           && shopCanFeature(uid, 'manageProducts')
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
@@ -235,11 +302,24 @@ service cloud.firestore {
           && request.resource.data.sellingPrice is number
           && request.resource.data.sellingPrice >= 0
           && request.resource.data.sellingPrice < 100000000;
+        allow update: if (actorCan(uid, 'manageProducts')
+            && shopCanFeature(uid, 'manageProducts')
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() < 120
+            && request.resource.data.sellingPrice is number
+            && request.resource.data.sellingPrice >= 0
+            && request.resource.data.sellingPrice < 100000000)
+          // Selling or returning a bill changes the stock count and nothing else.
+          || ((actorCan(uid, 'addSale') || actorCan(uid, 'editSale'))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stock'])
+            && request.resource.data.stock is number
+            && request.resource.data.stock >= 0);
       }
 
       match /savedOrders/{orderId} {
         allow read, delete: if isShopActor(uid);
-        allow create: if isShopActor(uid)
+        allow create: if actorCan(uid, 'addSale')
           && shopCanFeature(uid, 'addSale')
           && request.resource.data.savedAt is timestamp
           && request.resource.data.total is number
@@ -248,8 +328,9 @@ service cloud.firestore {
       }
 
       // Staff membership for this shop (owner manages; all shop actors can list for sync).
+      // A switched-off login may still read its own row, so the app can sign it out.
       match /members/{memberId} {
-        allow read: if isShopActor(uid);
+        allow read: if isShopActor(uid) || (isSignedIn() && request.auth.uid == memberId);
         allow create, update: if isShopOwner(uid);
         allow delete: if isShopOwner(uid);
       }
@@ -268,8 +349,8 @@ service cloud.firestore {
 
       match /materials/{materialId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
-        allow create, update: if (isShopOwner(uid) || isShopManager(uid))
+        allow delete: if actorCan(uid, 'manageStock');
+        allow create, update: if actorCan(uid, 'manageStock')
           && shopCanFeature(uid, 'manageProducts')
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
@@ -278,26 +359,26 @@ service cloud.firestore {
 
       match /recipes/{recipeId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
-        allow create, update: if (isShopOwner(uid) || isShopManager(uid))
+        allow delete: if actorCan(uid, 'manageStock');
+        allow create, update: if actorCan(uid, 'manageStock')
           && shopCanFeature(uid, 'manageProducts');
       }
 
       match /stockMoves/{moveId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
+        allow delete: if actorCan(uid, 'manageStock');
         allow create, update: if isShopActor(uid)
           && (
-            ((isShopOwner(uid) || isShopManager(uid)) && shopCanFeature(uid, 'manageProducts'))
-            || shopCanFeature(uid, 'addSale')
+            (actorCan(uid, 'manageStock') && shopCanFeature(uid, 'manageProducts'))
+            || (actorCan(uid, 'addSale') && shopCanFeature(uid, 'addSale'))
           );
       }
 
       // Kitchen / shop supplier payables.
       match /suppliers/{supplierId} {
         allow read: if isShopActor(uid);
-        allow delete: if isShopOwner(uid) || isShopManager(uid);
-        allow create, update: if (isShopOwner(uid) || isShopManager(uid))
+        allow delete: if actorCan(uid, 'manageStock');
+        allow create, update: if actorCan(uid, 'manageStock')
           && shopCanFeature(uid, 'manageProducts')
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
@@ -309,19 +390,21 @@ service cloud.firestore {
 
       match /customers/{customerId} {
         allow read: if isShopActor(uid);
-        allow create, update: if isShopActor(uid) && shopCanFeature(uid, 'addSale');
+        allow create, update: if (actorCan(uid, 'addSale') || actorCan(uid, 'collectCredit')) && shopCanFeature(uid, 'addSale');
         allow delete: if isShopOwner(uid) || isShopManager(uid);
       }
 
       match /creditPayments/{paymentId} {
         allow read: if isShopActor(uid);
-        allow create: if isShopActor(uid) && shopCanFeature(uid, 'addSale');
+        allow create: if actorCan(uid, 'collectCredit')
+          && branchAllowed(uid, request.resource.data.get('branchId', ''))
+          && shopCanFeature(uid, 'addSale');
         allow update, delete: if isShopOwner(uid) || isShopManager(uid);
       }
 
       match /returns/{returnId} {
         allow read: if isShopActor(uid);
-        allow create: if (isShopOwner(uid) || isShopManager(uid)) && shopCanFeature(uid, 'addSale');
+        allow create: if actorCan(uid, 'editSale') && shopCanFeature(uid, 'addSale');
         allow update, delete: if isShopOwner(uid) || isShopManager(uid);
       }
 

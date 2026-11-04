@@ -30,7 +30,11 @@ import { Toast, useToast } from '../components/Toast';
 import { FillButton, Screen, SyncNotice } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
+import { useKitchen } from '../context/KitchenContext';
 import { useI18n } from '../context/LocaleContext';
+import { BranchChips } from '../components/kitchen/KitchenUi';
+import { BranchSalesCard } from '../components/BranchSalesCard';
+import { scopeBooks } from '../lib/branchScope';
 import { formatRs, isSameDay, startOfDay, sum } from '../lib/format';
 import { dayClosedAt, dayKey, openingBalanceForDay } from '../lib/dayKey';
 import {
@@ -58,11 +62,11 @@ import {
 } from './GateScreens';
 
 const ACTIONS = [
-  { key: 'sale', labelKey: 'newSale' as const, gradient: gradients.green, route: 'NewSale' as const, Icon: CartDuoIcon, feature: 'addSale' as const, flag: 'sales' as const },
-  { key: 'expense', labelKey: 'addExpense' as const, gradient: gradients.orange, route: 'AddExpense' as const, Icon: ReceiptDuoIcon, feature: 'addExpense' as const, flag: 'expenses' as const },
-  { key: 'credit', labelKey: 'creditBook' as const, gradient: gradients.teal, route: 'CreditBook' as const, Icon: BookDuoIcon, feature: 'addSale' as const, flag: 'sales' as const },
-  { key: 'products', labelKey: 'products' as const, gradient: gradients.purple, route: 'Products' as const, Icon: BoxDuoIcon, feature: 'manageProducts' as const, flag: 'products' as const },
-  { key: 'reports', labelKey: 'reports' as const, gradient: gradients.blue, route: 'Reports' as const, Icon: ChartDuoIcon, feature: 'viewReports' as const, flag: 'reports' as const },
+  { key: 'sale', labelKey: 'newSale' as const, gradient: gradients.green, route: 'NewSale' as const, Icon: CartDuoIcon, feature: 'addSale' as const, flag: 'sales' as const, needs: 'addSale' as const },
+  { key: 'expense', labelKey: 'addExpense' as const, gradient: gradients.orange, route: 'AddExpense' as const, Icon: ReceiptDuoIcon, feature: 'addExpense' as const, flag: 'expenses' as const, needs: 'addExpense' as const },
+  { key: 'credit', labelKey: 'creditBook' as const, gradient: gradients.teal, route: 'CreditBook' as const, Icon: BookDuoIcon, feature: 'addSale' as const, flag: 'sales' as const, needs: 'collectCredit' as const },
+  { key: 'products', labelKey: 'products' as const, gradient: gradients.purple, route: 'Products' as const, Icon: BoxDuoIcon, feature: 'manageProducts' as const, flag: 'products' as const, needs: 'manageProducts' as const },
+  { key: 'reports', labelKey: 'reports' as const, gradient: gradients.blue, route: 'Reports' as const, Icon: ChartDuoIcon, feature: 'viewReports' as const, flag: 'reports' as const, needs: 'viewReports' as const },
 ] as const;
 
 export function HomeScreen() {
@@ -71,7 +75,11 @@ export function HomeScreen() {
     NativeStackNavigationProp<AppStackParamList>
   >>();
   const { user } = useAuth();
-  const { books, error, loading, setTodayOpeningBalance, editTodayOpeningBalance, todayClosed, closeToday, resumeToday } = useBooks();
+  const { books, error, loading, dayBranch, setTodayOpeningBalance, editTodayOpeningBalance, todayClosed, closeToday, resumeToday } = useBooks();
+  const kitchen = useKitchen();
+  const branches = kitchen.data.branches;
+  // Everything on this screen follows the branch switcher; staff tied to a branch only ever see theirs.
+  const scoped = useMemo(() => scopeBooks(books, kitchen.scope, branches), [books, kitchen.scope, branches]);
   const { t } = useI18n();
   const { colors } = useTheme();
   const { canAccess, profile } = useShopGate();
@@ -84,11 +92,9 @@ export function HomeScreen() {
   const productsOn = useFeature('products');
   const reportsOn = useFeature('reports');
   const flags = { sales: salesOn, expenses: expensesOn, products: productsOn, reports: reportsOn };
-  const homeActions = ACTIONS.filter((action) => {
-    if (!flags[action.flag]) return false;
-    if (!isCashier) return true;
-    return action.key === 'sale' || action.key === 'credit';
-  });
+  const homeActions = ACTIONS.filter((action) => flags[action.flag] && can(action.needs));
+  const canCloseDay = can('closeDay');
+  const canSeeReports = can('viewReports');
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [openingModal, setOpeningModal] = useState(false);
   const [openingEditing, setOpeningEditing] = useState(false);
@@ -104,21 +110,22 @@ export function HomeScreen() {
   const now = Date.now();
   const todayKey = dayKey(now);
   const yesterday = startOfDay(now) - 24 * 60 * 60 * 1000;
-  const openingToday = openingBalanceForDay(books.meta, now);
-  const salesToday = sum(books.sales.filter((sale) => isSameDay(sale.createdAt, now)));
+  const openingToday = openingBalanceForDay(scoped.meta, now);
+  const salesTodayList = scoped.sales.filter((sale) => isSameDay(sale.createdAt, now));
+  const salesToday = sum(salesTodayList);
   const todaySales = openingToday + salesToday;
-  const yesterdaySales = sum(books.sales.filter((sale) => isSameDay(sale.createdAt, yesterday)));
+  const yesterdaySales = sum(scoped.sales.filter((sale) => isSameDay(sale.createdAt, yesterday)));
   const percent = changePercent(todaySales, yesterdaySales);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-  const monthSaleList = books.sales.filter((sale) => sale.createdAt >= monthStart);
-  const monthExpenseList = books.expenses.filter((expense) => expense.createdAt >= monthStart);
+  const monthSaleList = scoped.sales.filter((sale) => sale.createdAt >= monthStart);
+  const monthExpenseList = scoped.expenses.filter((expense) => expense.createdAt >= monthStart);
   const monthSales = sum(monthSaleList);
   const monthExpenses = sum(monthExpenseList);
   const monthProfit = monthSales - monthExpenses;
   const margin = monthSales > 0 ? Math.round((monthProfit / monthSales) * 100) : 0;
-  const hasToday = todaySales > 0 || books.expenses.some((expense) => isSameDay(expense.createdAt, now));
-  const daySummary = useMemo(() => buildDayCloseSummary(books, now), [books, todayKey]);
-  const closedAt = dayClosedAt(books.meta, now);
+  const hasToday = todaySales > 0 || scoped.expenses.some((expense) => isSameDay(expense.createdAt, now));
+  const daySummary = useMemo(() => buildDayCloseSummary(scoped, now), [scoped, todayKey]);
+  const closedAt = dayClosedAt(books.meta, now, dayBranch);
 
   useEffect(() => {
     readOpeningPromptDay().then((day) => {
@@ -128,9 +135,10 @@ export function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (loading || !promptReady) return;
-    setOpeningModal(needsOpeningBalancePrompt(books.meta, Date.now(), localPromptDay));
-  }, [loading, promptReady, books.meta.openingBalances, localPromptDay, todayKey]);
+    if (loading || kitchen.loading || !promptReady) return;
+    // "All branches" has no single drawer to count, so only ask once one branch is chosen.
+    setOpeningModal(!kitchen.viewAll && needsOpeningBalancePrompt(books.meta, Date.now(), localPromptDay, dayBranch));
+  }, [loading, kitchen.loading, kitchen.viewAll, promptReady, books.meta.openingBalances, books.meta.branchDays, dayBranch, localPromptDay, todayKey]);
 
   // New calendar day → dismiss close/resume sheet (Resume is same-day only).
   useEffect(() => {
@@ -143,8 +151,7 @@ export function HomeScreen() {
       try {
         const value = skip ? 0 : Math.max(0, Math.round(Number(openingInput) || 0));
         await setTodayOpeningBalance(value);
-        await markOpeningPromptDay(now);
-        setLocalPromptDay(dayKey(now));
+        setLocalPromptDay(await markOpeningPromptDay(now, dayBranch));
         setOpeningModal(false);
         setOpeningInput('');
       } catch (caught) {
@@ -156,13 +163,17 @@ export function HomeScreen() {
         setOpeningBusy(false);
       }
     },
-    [openingInput, setTodayOpeningBalance, t],
+    [dayBranch, openingInput, setTodayOpeningBalance, t],
   );
 
   const startOpeningEdit = useCallback(() => {
+    if (kitchen.viewAll) {
+      toast.show('error', t((m) => m.home.pickBranchFirst));
+      return;
+    }
     setOpeningInput(String(openingToday));
     setOpeningEditing(true);
-  }, [openingToday]);
+  }, [kitchen.viewAll, openingToday, t, toast]);
 
   const cancelOpeningEdit = useCallback(() => {
     setOpeningEditing(false);
@@ -300,18 +311,23 @@ export function HomeScreen() {
         <SyncNotice
           message={error ? `${error} ${t((m) => m.home.syncError)}` : null}
         />
-        {todayClosed ? (
+        {branches.length > 1 && !kitchen.branchLocked ? (
+          <BranchChips branches={branches} value={kitchen.scope} onChange={kitchen.setScope} />
+        ) : null}
+        {todayClosed && !kitchen.viewAll ? (
           <View style={[styles.dayCloseBanner, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
             <Text style={[styles.dayCloseBannerText, { color: colors.ink }]}>{t((m) => m.home.dayClosedBanner)}</Text>
             <View style={styles.dayCloseBannerActions}>
-              <FillButton
-                label={t((m) => m.home.resumeSales)}
-                onPress={() => {
-                  void confirmResumeDay();
-                }}
-                busy={closeBusy}
-                color={colors.saleText}
-              />
+              {canCloseDay ? (
+                <FillButton
+                  label={t((m) => m.home.resumeSales)}
+                  onPress={() => {
+                    void confirmResumeDay();
+                  }}
+                  busy={closeBusy}
+                  color={colors.saleText}
+                />
+              ) : null}
               <FillButton
                 label={t((m) => m.home.viewDayClose)}
                 onPress={() => setCloseModal(true)}
@@ -346,6 +362,7 @@ export function HomeScreen() {
             </View>
           ) : null}
         </View>
+        {canSeeReports ? <BranchSalesCard sales={salesTodayList} branches={branches} /> : null}
         <FadeUp delay={160} style={[styles.panel, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
           <View style={[styles.panelHead, { borderBottomColor: colors.hairline }]}>
             <GridDuoIcon color={colors.brand} size={18} />
@@ -369,7 +386,7 @@ export function HomeScreen() {
                 }}
               />
             ))}
-            {showKitchen && !isCashier ? (
+            {showKitchen ? (
               <HomeActionTile
                 key="kitchen"
                 delay={220 + homeActions.length * 90}
@@ -387,6 +404,8 @@ export function HomeScreen() {
             ) : null}
           </View>
         </FadeUp>
+        {canSeeReports ? (
+        <>
         <View style={styles.sectionHead}>
           <Text style={[styles.sectionTitle, { color: colors.ink }]}>{t((m) => m.home.thisMonth)}</Text>
           <Pressable onPress={() => navigation.navigate('Month')} style={styles.viewAll}>
@@ -432,11 +451,16 @@ export function HomeScreen() {
             style={styles.statFull}
           />
         </View>
-        {salesOn && !todayClosed ? (
+        </>
+        ) : null}
+        {salesOn && canCloseDay && (kitchen.viewAll || !todayClosed) ? (
           <View style={styles.dayCloseBottom}>
             <FillButton
               label={t((m) => m.home.closeDay)}
-              onPress={() => setCloseModal(true)}
+              onPress={() => {
+                if (kitchen.viewAll) toast.show('error', t((m) => m.home.pickBranchFirst));
+                else setCloseModal(true);
+              }}
               color={colors.brand}
             />
           </View>

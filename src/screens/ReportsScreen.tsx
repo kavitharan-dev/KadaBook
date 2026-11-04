@@ -11,15 +11,16 @@ import { PrintButton } from '../components/PrintButton';
 import { Toast, useToast } from '../components/Toast';
 import { FullReports } from '../components/FullReports';
 import { BranchChips } from '../components/kitchen/KitchenUi';
+import { BranchSalesCard } from '../components/BranchSalesCard';
 import { useKitchen } from '../context/KitchenContext';
-import { inScope, saleBranch } from '../lib/kitchenOps';
+import { scopeBooks } from '../lib/branchScope';
 import { useShopGate } from '../context/ShopGateContext';
 import { useBooks } from '../context/BooksContext';
 import { useFeature } from '../context/RemoteConfigContext';
 import { useI18n } from '../context/LocaleContext';
 import { expenseCategoryMessage } from '../i18n';
 import { useAuth } from '../context/AuthContext';
-import { formatDay, formatRs, formatTime, sum } from '../lib/format';
+import { formatDay, formatRs, formatTime, isSameDay, sum } from '../lib/format';
 import {
   buildAttachedPeriodReportText,
   buildAttachedPeriodSummary,
@@ -38,7 +39,6 @@ import { useTheme } from '../context/ThemeContext';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
-import type { Books } from '../data/types';
 
 const MODES = ['daily', 'weekly', 'monthly'] as const;
 type Mode = (typeof MODES)[number];
@@ -58,14 +58,10 @@ export function ReportsScreen() {
   const { books } = useBooks();
   const kitchen = useKitchen();
   const branches = kitchen.data.branches;
-  // With more than one branch, the whole report follows the branch switcher.
-  const branchSales = branches.length > 1 ? books.sales.filter((s) => inScope(saleBranch(s, branches), kitchen.scope)) : books.sales;
-  const mainId = branches.find((b) => b.isMain)?.id ?? '';
-  const branchExpenses = branches.length > 1 ? books.expenses.filter((e) => inScope(e.branchId ?? mainId, kitchen.scope)) : books.expenses;
-  const scopedBooks = useMemo<Books>(
-    () => ({ ...books, sales: branchSales, expenses: branchExpenses }),
-    [books, branchSales, branchExpenses],
-  );
+  // The whole report follows the branch switcher, opening balance and credit collected included.
+  const scopedBooks = useMemo(() => scopeBooks(books, kitchen.scope, branches), [books, kitchen.scope, branches]);
+  const branchSales = scopedBooks.sales;
+  const branchExpenses = scopedBooks.expenses;
   const reportsOn = useFeature('reports');
   const exportOn = useFeature('export');
   const { canAccess } = useShopGate();
@@ -167,7 +163,7 @@ export function ReportsScreen() {
         }
       />
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        {branches.length > 1 ? <BranchChips branches={branches} value={kitchen.scope} onChange={kitchen.setScope} /> : null}
+        {branches.length > 1 && !kitchen.branchLocked ? <BranchChips branches={branches} value={kitchen.scope} onChange={kitchen.setScope} /> : null}
         <View style={styles.modes}>
           {(
             [
@@ -222,6 +218,9 @@ export function ReportsScreen() {
             ink={colors.profitText}
           />
         </View>
+        {mode === 'daily' ? (
+          <BranchSalesCard sales={branchSales.filter((sale) => isSameDay(sale.createdAt, now))} branches={branches} />
+        ) : null}
         {mode === 'weekly' ? (
           <Text style={styles.weekHint}>{t((m) => m.reportsTab.weeklyHint)}</Text>
         ) : null}

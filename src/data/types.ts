@@ -64,6 +64,8 @@ export type CreditPayment = {
   amount: number;
   method: 'cash' | 'card';
   note?: string;
+  /** The branch that took the money. Older rows count as the main branch. */
+  branchId?: string;
   createdAt: number;
 };
 
@@ -77,6 +79,12 @@ export type Supplier = {
 
 export type StaffRole = 'owner' | 'manager' | 'cashier';
 
+/** Member value for "not tied to one branch". Missing means the same, for logins made before branches. */
+export const ALL_BRANCHES = 'all';
+
+/** Differences from the role template: true adds a permission, false removes it. */
+export type PermissionOverrides = Record<string, boolean>;
+
 /** A staff login. `id` is the staff member's own Firebase uid. */
 export type StaffMember = {
   id: string;
@@ -86,6 +94,9 @@ export type StaffMember = {
   active: boolean;
   /** Phone or email they sign in with, for the owner's list. */
   login?: string;
+  /** Branch id, or ALL_BRANCHES. */
+  branchId?: string;
+  permissions?: PermissionOverrides;
   createdAt: number;
 };
 
@@ -122,9 +133,21 @@ export type SavedOrder = {
 /** What a draft keeps besides its lines. */
 export type DraftInfo = Pick<SavedOrder, 'kind' | 'customerName' | 'customerPhone'>;
 
+/** One branch on one day (users/{shop}/branchDays/{branchId}_{day}). */
+export type BranchDay = {
+  branchId: string;
+  day: string;
+  opening?: number;
+  /** Millis when closed; null once resumed. */
+  closedAt?: number | null;
+};
+
 export type BooksMeta = {
   nextInvoice: number;
+  /** Shop-wide values: the main branch's history, and every day for shops without branches. */
   openingBalances?: Record<string, number>;
+  /** `${branchId}_${day}` → that branch's opening and close. Wins over the shop-wide maps. */
+  branchDays?: Record<string, BranchDay>;
   /** dayKey → closedAt millis. Soft close; clear entry to resume sales. */
   closedDays?: Record<string, number>;
   /**
@@ -165,6 +188,10 @@ export type ShopUser = {
   /** Staff only: their own Firebase uid and name. */
   authUid?: string;
   staffName?: string;
+  /** Staff only: branch id, or ALL_BRANCHES. */
+  branchId?: string;
+  /** Staff only: differences from the role template. */
+  permissions?: PermissionOverrides;
 };
 
 export const EMPTY_BOOKS: Books = {

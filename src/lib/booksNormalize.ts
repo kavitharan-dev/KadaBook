@@ -43,6 +43,7 @@ export function normalizeBooks(raw: Partial<Books> | null | undefined): Books {
       nextInvoice: raw.meta?.nextInvoice ?? 1,
       openingBalances: raw.meta?.openingBalances ?? {},
       closedDays: raw.meta?.closedDays ?? {},
+      branchDays: raw.meta?.branchDays ?? {},
       quickSaleProfitPercent:
         typeof raw.meta?.quickSaleProfitPercent === 'number' && Number.isFinite(raw.meta.quickSaleProfitPercent)
           ? Math.min(100, Math.max(0, Math.round(raw.meta.quickSaleProfitPercent)))

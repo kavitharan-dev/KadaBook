@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useShopGate } from '../context/ShopGateContext';
 import { useBooks } from '../context/BooksContext';
 import { useKitchen } from '../context/KitchenContext';
+import { useRole } from '../lib/roles';
 import { useI18n } from '../context/LocaleContext';
 import { discountAmount } from '../data/saleExtras';
 import type { DraftInfo, Product, SaleLine, SavedOrder } from '../data/types';
@@ -69,6 +70,7 @@ export function NewSaleScreen() {
   const [resumeBusy, setResumeBusy] = useState(false);
   const { colors } = useTheme();
   const kitchen = useKitchen();
+  const { can } = useRole();
   const isKitchenShop = usesKitchenStock(profile?.shopType ?? user?.shopType);
   const { contentMaxWidth, padX, keySize } = useResponsive();
 
@@ -420,25 +422,27 @@ export function NewSaleScreen() {
       {todayClosed ? (
         <View style={[styles.dayClosedBanner, { backgroundColor: colors.expenseWash, borderColor: colors.expenseText }]}>
           <Text style={[styles.dayClosedText, { color: colors.ink }]}>{t((m) => m.home.dayClosedSaleBlock)}</Text>
-          <FillButton
-            label={t((m) => m.home.resumeSales)}
-            busy={resumeBusy}
-            color={colors.saleText}
-            onPress={async () => {
-              setResumeBusy(true);
-              try {
-                await resumeToday();
-                toast.show('success', t((m) => m.home.resumeSales));
-              } catch (caught) {
-                setError(caught instanceof Error ? caught.message : t((m) => m.home.resumeFailed));
-              } finally {
-                setResumeBusy(false);
-              }
-            }}
-          />
+          {can('closeDay') ? (
+            <FillButton
+              label={t((m) => m.home.resumeSales)}
+              busy={resumeBusy}
+              color={colors.saleText}
+              onPress={async () => {
+                setResumeBusy(true);
+                try {
+                  await resumeToday();
+                  toast.show('success', t((m) => m.home.resumeSales));
+                } catch (caught) {
+                  setError(caught instanceof Error ? caught.message : t((m) => m.home.resumeFailed));
+                } finally {
+                  setResumeBusy(false);
+                }
+              }}
+            />
+          ) : null}
         </View>
       ) : null}
-      {isKitchenShop && kitchen.data.branches.length > 1 ? (
+      {kitchen.data.branches.length > 1 && !kitchen.branchLocked ? (
         <View style={{ paddingHorizontal: Math.max(12, padX - 4), paddingBottom: 6 }}>
           <BranchChips
             branches={kitchen.data.branches}
