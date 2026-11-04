@@ -34,6 +34,8 @@ export type MaterialInput = {
   reorderLevel: number;
   avgCost: number;
   category?: string;
+  /** Links kitchen-ready stock to a Products / Foods item. */
+  productId?: string;
   inputs?: MaterialQty[];
 };
 
@@ -60,7 +62,17 @@ export type KitchenRepo = {
 /* Mapping                                                             */
 /* ------------------------------------------------------------------ */
 
-const MOVE_TYPES: MoveType[] = ['purchase', 'sale', 'transferOut', 'transferIn', 'productionIn', 'productionOut', 'wastage', 'adjust'];
+const MOVE_TYPES: MoveType[] = [
+  'purchase',
+  'sale',
+  'transferOut',
+  'transferIn',
+  'productionIn',
+  'productionOut',
+  'counterOut',
+  'wastage',
+  'adjust',
+];
 
 function ms(value: unknown) {
   if (value && typeof value === 'object' && 'toMillis' in value) return (value as Timestamp).toMillis();
@@ -94,6 +106,7 @@ function mapMaterial(id: string, d: Record<string, unknown>): RawMaterial {
   const unit = MATERIAL_UNITS.includes(d.unit as MaterialUnit) ? (d.unit as MaterialUnit) : 'pcs';
   const inputs = qtyLines(d.inputs);
   const category = typeof d.category === 'string' && d.category.trim() ? d.category.trim() : undefined;
+  const productId = typeof d.productId === 'string' && d.productId.trim() ? d.productId.trim() : undefined;
   return {
     id,
     name: String(d.name ?? 'Material'),
@@ -101,6 +114,7 @@ function mapMaterial(id: string, d: Record<string, unknown>): RawMaterial {
     avgCost: Number(d.avgCost) || 0,
     reorderLevel: Number(d.reorderLevel) || 0,
     ...(category ? { category } : {}),
+    ...(productId ? { productId } : {}),
     ...(inputs.length ? { inputs } : {}),
     createdAt: ms(d.createdAt),
   };
@@ -191,6 +205,7 @@ const cloudKitchen: KitchenRepo = {
         avgCost: input.avgCost,
         inputs: input.inputs ?? [],
         ...(input.category !== undefined ? { category: input.category.trim() || null } : {}),
+        ...(input.productId !== undefined ? { productId: input.productId.trim() || null } : {}),
         ...(id ? {} : { createdAt: serverTimestamp() }),
       },
       { merge: true },
@@ -308,12 +323,26 @@ const localKitchen: KitchenRepo = {
     const materialId = id ?? newId();
     await change(uid, (d) => {
       const existing = d.materials.find((m) => m.id === materialId);
+      const productId =
+        input.productId !== undefined
+          ? input.productId.trim() || undefined
+          : existing?.productId;
       const next: RawMaterial = {
-        ...input,
         name: input.name.trim(),
+        unit: input.unit,
+        avgCost: input.avgCost,
+        reorderLevel: input.reorderLevel,
         id: materialId,
         createdAt: existing?.createdAt ?? Date.now(),
-        ...(input.category !== undefined ? { category: input.category.trim() || undefined } : { category: existing?.category }),
+        ...(input.category !== undefined
+          ? input.category.trim()
+            ? { category: input.category.trim() }
+            : {}
+          : existing?.category
+            ? { category: existing.category }
+            : {}),
+        ...(productId ? { productId } : {}),
+        ...(input.inputs?.length ? { inputs: input.inputs } : {}),
       };
       d.materials = existing ? d.materials.map((m) => (m.id === materialId ? next : m)) : [...d.materials, next];
     });

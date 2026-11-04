@@ -6,6 +6,8 @@ export type SaleLine = {
   qty: number;
   unitPrice: number;
   lineTotal: number;
+  /** Cost per unit frozen at sale time (for stable day profit). */
+  unitCost?: number;
 };
 
 export type Sale = {
@@ -27,6 +29,9 @@ export type Expense = {
   branchId?: string;
 };
 
+/** simple = bottle/coke (product stock only); menu = food that can use kitchen recipes. */
+export type ProductSellKind = 'simple' | 'menu';
+
 export type Product = {
   id: string;
   name: string;
@@ -39,6 +44,8 @@ export type Product = {
   reorderLevel?: number;
   batchNo?: string;
   expiry?: string;
+  /** Missing on old rows → treat as simple unless a kitchen recipe exists. */
+  sellKind?: ProductSellKind;
   createdAt: number;
 };
 
@@ -118,6 +125,13 @@ export type DraftInfo = Pick<SavedOrder, 'kind' | 'customerName' | 'customerPhon
 export type BooksMeta = {
   nextInvoice: number;
   openingBalances?: Record<string, number>;
+  /** dayKey → closedAt millis. Soft close; clear entry to resume sales. */
+  closedDays?: Record<string, number>;
+  /**
+   * Assumed margin on quick (amount-only) sales for day profit.
+   * Owner-set; default 10 when missing.
+   */
+  quickSaleProfitPercent?: number;
   /** Shop-specific labels (shown after Stock / Transport / Other). */
   customExpenseCategories?: string[];
 };
@@ -182,6 +196,7 @@ export type ProductInput = {
   reorderLevel?: number;
   batchNo?: string;
   expiry?: string;
+  sellKind?: ProductSellKind;
 };
 
 export type QuickSaleInput = {

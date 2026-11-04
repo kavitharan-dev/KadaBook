@@ -71,6 +71,11 @@ export function recipeFor(productId: string | undefined, recipes: Recipe[]) {
   return productId ? recipes.find((r) => r.productId === productId) : undefined;
 }
 
+/** Kitchen-ready material linked to a sell product (Produce → Transfer to Foods). */
+export function readyMaterialFor(productId: string | undefined, materials: RawMaterial[]) {
+  return productId ? materials.find((m) => m.productId === productId) : undefined;
+}
+
 /** Materials a bill uses, from the recipes of its items. Items without a recipe use nothing. */
 export function saleUsage(items: SaleLine[], recipes: Recipe[]): Record<string, number> {
   const usage: Record<string, number> = {};

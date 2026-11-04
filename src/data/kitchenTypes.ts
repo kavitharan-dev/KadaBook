@@ -25,6 +25,11 @@ export type RawMaterial = {
   reorderLevel: number;
   /** Group from the standard catalog (Meat, Bakery, Sauces…). */
   category?: string;
+  /**
+   * When set, this row is kitchen-ready stock for a sell product (not a raw buy item).
+   * Created/synced from Recipes; Produce fills it; Transfer to Foods moves it to product.stock.
+   */
+  productId?: string;
   /** A prepared item (e.g. "Burger (ready)") lists what one unit of it is made from. */
   inputs?: MaterialQty[];
   createdAt: number;
@@ -44,6 +49,7 @@ export type MoveType =
   | 'transferIn'
   | 'productionIn'
   | 'productionOut'
+  | 'counterOut'
   | 'wastage'
   | 'adjust';
 
@@ -54,6 +60,7 @@ export const MOVE_LABEL: Record<MoveType, string> = {
   transferIn: 'Transfer in',
   productionIn: 'Produced',
   productionOut: 'Used in production',
+  counterOut: 'To Foods / cashier',
   wastage: 'Wastage',
   adjust: 'Stock count',
 };

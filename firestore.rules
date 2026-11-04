@@ -173,7 +173,8 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      // Owner, active staff of this shop, or admin can read shop profile (opening / day close).
+      allow read: if isAdmin() || isShopActor(uid);
 
       allow create: if isSignedIn()
         && request.auth.uid == uid
@@ -181,9 +182,14 @@ service cloud.firestore {
         && (!('status' in request.resource.data) || request.resource.data.status == 'pending');
 
       allow update: if isAdmin()
-        || (isSignedIn()
-          && request.auth.uid == uid
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'rejectReason', 'overrides', 'overrideReason']));
+        || (isShopOwner(uid)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['status', 'rejectReason', 'overrides', 'overrideReason']))
+        // Staff may only soft-write opening balance and day-close marks.
+        // Staff may add a day's opening balance but only the owner may change a saved one.
+        || (isShopMember(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openingBalances', 'closedDays'])
+          && request.resource.data.get('openingBalances', {}).diff(resource.data.get('openingBalances', {})).changedKeys().size() == 0
+          && request.resource.data.get('openingBalances', {}).diff(resource.data.get('openingBalances', {})).removedKeys().size() == 0);
 
       allow delete: if false;
 

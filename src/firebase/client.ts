@@ -19,6 +19,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -221,11 +222,24 @@ export const cloudAuth: AuthService = {
             onUser(null);
             return;
           }
-          onUser(await staffProfile(user.uid, user.email ?? '', link));
+          try {
+            onUser(await staffProfile(user.uid, user.email ?? '', link));
+          } catch {
+            // Shop profile may be briefly unreadable; still bind to the shop, never to a blank owner account.
+            onUser({
+              uid: link.shopUid,
+              email: user.email ?? '',
+              shopName: 'My Shop',
+              phone: null,
+              role: link.role,
+              authUid: user.uid,
+              staffName: link.name,
+            });
+          }
           return;
         }
       } catch {
-        // Offline with no cache: fall through to the owner profile.
+        // staffIndex unavailable (offline): fall through to owner profile for real owners only.
       }
       onUser({
         uid: user.uid,
@@ -256,7 +270,19 @@ export const cloudAuth: AuthService = {
           await firebaseSignOut(firebaseAuth());
           throw new Error(STAFF_OFF);
         }
-        return staffProfile(cred.user.uid, email, link);
+        try {
+          return await staffProfile(cred.user.uid, email, link);
+        } catch {
+          return {
+            uid: link.shopUid,
+            email,
+            shopName: 'My Shop',
+            phone: null,
+            role: link.role,
+            authUid: cred.user.uid,
+            staffName: link.name,
+          };
+        }
       }
       const profile = await readProfile(cred.user.uid, email);
       await setDoc(
@@ -410,6 +436,10 @@ function mapSale(id: string, data: Record<string, unknown>): Sale {
         qty: Number(line.qty) || 0,
         unitPrice: Number(line.unitPrice) || 0,
         lineTotal: Number(line.lineTotal) || 0,
+        unitCost:
+          line.unitCost != null && Number.isFinite(Number(line.unitCost))
+            ? Math.round(Number(line.unitCost))
+            : undefined,
       }))
     : undefined;
   return {
@@ -438,6 +468,7 @@ function mapProduct(id: string, data: Record<string, unknown>): Product {
     reorderLevel: data.reorderLevel != null ? Number(data.reorderLevel) : undefined,
     batchNo: typeof data.batchNo === 'string' ? data.batchNo : undefined,
     expiry: typeof data.expiry === 'string' ? data.expiry : undefined,
+    sellKind: data.sellKind === 'menu' ? 'menu' : data.sellKind === 'simple' ? 'simple' : undefined,
     createdAt: millis(data.createdAt),
   };
 }
@@ -479,6 +510,8 @@ export const cloudRepository: Repository = {
     let audit: Books['audit'] = [];
     let nextInvoice = 1;
     let openingBalances: Record<string, number> = {};
+    let closedDays: Record<string, number> = {};
+    let quickSaleProfitPercent: number | undefined;
     let customExpenseCategories: string[] = [];
 
     const push = () =>
@@ -494,7 +527,7 @@ export const cloudRepository: Repository = {
           staff,
           returns,
           audit,
-          meta: { nextInvoice, openingBalances, customExpenseCategories },
+          meta: { nextInvoice, openingBalances, closedDays, quickSaleProfitPercent, customExpenseCategories },
         }),
       );
 
@@ -510,13 +543,30 @@ export const cloudRepository: Repository = {
       (snap) => {
         nextInvoice = Number(snap.data()?.nextInvoice) || 1;
         const raw = snap.data()?.openingBalances;
-        if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-          openingBalances = Object.fromEntries(
-            Object.entries(raw as Record<string, unknown>).map(([k, v]) => [k, Math.round(Number(v) || 0)]),
+        // Older saves wrote a literal top-level "openingBalances.YYYY-MM-DD" field; nested values win.
+        const legacyOpening = Object.entries(snap.data() ?? {})
+          .filter(([k]) => k.startsWith('openingBalances.'))
+          .map(([k, v]) => [k.slice('openingBalances.'.length), v] as const);
+        const nestedOpening =
+          raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.entries(raw as Record<string, unknown>) : [];
+        openingBalances = Object.fromEntries(
+          [...legacyOpening, ...nestedOpening].map(([k, v]) => [k, Math.round(Number(v) || 0)]),
+        );
+        const rawClosed = snap.data()?.closedDays;
+        if (rawClosed && typeof rawClosed === 'object' && !Array.isArray(rawClosed)) {
+          closedDays = Object.fromEntries(
+            Object.entries(rawClosed as Record<string, unknown>)
+              .map(([k, v]) => [k, Math.round(Number(v) || 0)] as const)
+              .filter(([, v]) => v > 0),
           );
         } else {
-          openingBalances = {};
+          closedDays = {};
         }
+        const rawQuickPct = snap.data()?.quickSaleProfitPercent;
+        quickSaleProfitPercent =
+          typeof rawQuickPct === 'number' && Number.isFinite(rawQuickPct)
+            ? Math.min(100, Math.max(0, Math.round(rawQuickPct)))
+            : undefined;
         const rawCustom = snap.data()?.customExpenseCategories;
         customExpenseCategories = Array.isArray(rawCustom)
           ? rawCustom.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
@@ -717,19 +767,24 @@ export const cloudRepository: Repository = {
     await deleteDoc(doc(firestore(), 'users', uid, 'expenses', id));
   },
   async addProduct(uid, input) {
-    await addDoc(collection(firestore(), 'users', uid, 'products'), {
-      name: input.name.trim(),
-      sellingPrice: Math.round(input.sellingPrice),
-      purchasePrice: Math.round(input.purchasePrice),
-      stock: input.stock,
-      unit: input.unit.trim() || 'pcs',
-      category: input.category.trim() || 'General',
-      barcode: input.barcode?.trim() ?? null,
-      reorderLevel: input.reorderLevel,
-      batchNo: input.batchNo?.trim() || null,
-      expiry: input.expiry?.trim() || null,
-      createdAt: serverTimestamp(),
-    });
+    await addDoc(
+      collection(firestore(), 'users', uid, 'products'),
+      defined({
+        name: input.name.trim(),
+        sellingPrice: Math.round(input.sellingPrice),
+        purchasePrice: Math.round(input.purchasePrice),
+        stock: input.stock,
+        unit: input.unit.trim() || 'pcs',
+        category: input.category.trim() || 'General',
+        barcode: input.barcode?.trim() || null,
+        reorderLevel:
+          input.reorderLevel != null && Number.isFinite(input.reorderLevel) ? input.reorderLevel : null,
+        batchNo: input.batchNo?.trim() || null,
+        expiry: input.expiry?.trim() || null,
+        sellKind: input.sellKind === 'menu' ? 'menu' : 'simple',
+        createdAt: serverTimestamp(),
+      }),
+    );
   },
   async deleteProduct(uid, id) {
     await deleteDoc(doc(firestore(), 'users', uid, 'products', id));
@@ -744,6 +799,7 @@ export const cloudRepository: Repository = {
         stock: input.stock,
         unit: input.unit.trim() || 'pcs',
         category: input.category.trim() || 'General',
+        sellKind: input.sellKind === 'menu' ? 'menu' : 'simple',
         ...(input.barcode !== undefined ? { barcode: input.barcode.trim() || null } : {}),
         ...(input.reorderLevel !== undefined ? { reorderLevel: input.reorderLevel } : {}),
         ...(input.batchNo !== undefined ? { batchNo: input.batchNo.trim() || null } : {}),
@@ -772,7 +828,21 @@ export const cloudRepository: Repository = {
   },
   async setOpeningBalance(uid, dayKey, amount) {
     const ref = doc(firestore(), 'users', uid);
-    await setDoc(ref, { [`openingBalances.${dayKey}`]: Math.round(amount) }, { merge: true });
+    // setDoc treats a dotted key as one literal field name, so nest the day key for the merge.
+    await setDoc(ref, { openingBalances: { [dayKey]: Math.round(amount) } }, { merge: true });
+  },
+  async setDayClosed(uid, dayKey, closedAt) {
+    const ref = doc(firestore(), 'users', uid);
+    if (closedAt == null) {
+      await updateDoc(ref, { [`closedDays.${dayKey}`]: deleteField() });
+      return;
+    }
+    // updateDoc field path is reliable for nested day keys (YYYY-MM-DD).
+    await updateDoc(ref, { [`closedDays.${dayKey}`]: Math.round(closedAt) });
+  },
+  async setQuickSaleProfitPercent(uid, percent) {
+    const value = Math.min(100, Math.max(0, Math.round(percent)));
+    await setDoc(doc(firestore(), 'users', uid), { quickSaleProfitPercent: value }, { merge: true });
   },
   async addCustomExpenseCategory(uid, name) {
     const label = normalizeCustomExpenseCategory(name);

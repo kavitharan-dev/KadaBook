@@ -17,3 +17,15 @@ export function hasOpeningBalanceRecorded(meta: { openingBalances?: Record<strin
   const key = dayKey(ms);
   return Object.prototype.hasOwnProperty.call(meta.openingBalances ?? {}, key);
 }
+
+export function isDayClosed(meta: { closedDays?: Record<string, number> }, ms: number = Date.now()) {
+  const key = dayKey(ms);
+  const value = meta.closedDays?.[key];
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+export function dayClosedAt(meta: { closedDays?: Record<string, number> }, ms: number = Date.now()) {
+  const key = dayKey(ms);
+  const value = meta.closedDays?.[key];
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}

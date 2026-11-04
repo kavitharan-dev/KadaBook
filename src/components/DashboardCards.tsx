@@ -101,6 +101,7 @@ function CardShell({
   gradient,
   glow,
   onPress,
+  onLongPress,
   accessibilityLabel,
   style,
   innerStyle,
@@ -110,6 +111,7 @@ function CardShell({
   gradient: readonly [string, string, ...string[]];
   glow: string;
   onPress: () => void;
+  onLongPress?: () => void;
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
   innerStyle?: StyleProp<ViewStyle>;
@@ -123,6 +125,7 @@ function CardShell({
           accessibilityRole="button"
           accessibilityLabel={accessibilityLabel}
           onPress={onPress}
+          onLongPress={onLongPress}
           onPressIn={onPressIn}
           onPressOut={onPressOut}
         >
@@ -193,6 +196,7 @@ export function HeroSalesCard({
   viewLabel,
   Icon,
   onPress,
+  onLongPress,
 }: {
   delay: number;
   title: string;
@@ -205,6 +209,7 @@ export function HeroSalesCard({
   viewLabel: string;
   Icon: IconType;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   const [now, setNow] = useState(() => new Date());
 
@@ -223,6 +228,7 @@ export function HeroSalesCard({
       gradient={gradients.blue}
       glow="rgba(37,99,235,0.35)"
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityLabel={`${title}. ${label}`}
       innerStyle={styles.heroCard}
     >

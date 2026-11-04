@@ -13,6 +13,7 @@ import { ProductTile } from '../components/ProductTile';
 import { ScanIcon } from '../components/Icons';
 import { BranchChips } from '../components/kitchen/KitchenUi';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
+import { effectiveSellKind, hasRecipe } from '../lib/productSell';
 import { usesKitchenStock } from '../lib/shopType';
 import { AccessBlockedModal } from '../components/GateModals';
 import { useAuth } from '../context/AuthContext';
@@ -64,9 +65,11 @@ export function NewSaleScreen() {
   const { canAccess, profile } = useShopGate();
   const [blockedOpen, setBlockedOpen] = useState(false);
   const { t, locale } = useI18n();
-  const { books, addQuickSale, checkoutBill, saveOrder, deleteSavedOrder } = useBooks();
+  const { books, addQuickSale, checkoutBill, saveOrder, deleteSavedOrder, todayClosed, resumeToday } = useBooks();
+  const [resumeBusy, setResumeBusy] = useState(false);
   const { colors } = useTheme();
   const kitchen = useKitchen();
+  const isKitchenShop = usesKitchenStock(profile?.shopType ?? user?.shopType);
   const { contentMaxWidth, padX, keySize } = useResponsive();
 
   // The keyboard can cover the payment / discount / customer fields (no auto-resize on newer Android),
@@ -237,7 +240,9 @@ export function NewSaleScreen() {
       await checkoutBill(cart, extrasInput);
       const sold = cart;
       setCart([]);
-      kitchen.recordSale(sold).catch(() => toast.show('error', 'Sale saved, but kitchen stock usage could not be recorded.'));
+      if (isKitchenShop) {
+        kitchen.recordSale(sold).catch(() => toast.show('error', 'Sale saved, but kitchen stock usage could not be recorded.'));
+      }
       afterSaved(startedAt);
     } catch (caught) {
       showError(caught);
@@ -412,7 +417,28 @@ export function NewSaleScreen() {
         }}
       />
       <Header title={t((m) => m.sale.title)} onBack={() => closeToDashboard(navigation)} />
-      {usesKitchenStock(profile?.shopType ?? user?.shopType) && kitchen.data.branches.length > 1 ? (
+      {todayClosed ? (
+        <View style={[styles.dayClosedBanner, { backgroundColor: colors.expenseWash, borderColor: colors.expenseText }]}>
+          <Text style={[styles.dayClosedText, { color: colors.ink }]}>{t((m) => m.home.dayClosedSaleBlock)}</Text>
+          <FillButton
+            label={t((m) => m.home.resumeSales)}
+            busy={resumeBusy}
+            color={colors.saleText}
+            onPress={async () => {
+              setResumeBusy(true);
+              try {
+                await resumeToday();
+                toast.show('success', t((m) => m.home.resumeSales));
+              } catch (caught) {
+                setError(caught instanceof Error ? caught.message : t((m) => m.home.resumeFailed));
+              } finally {
+                setResumeBusy(false);
+              }
+            }}
+          />
+        </View>
+      ) : null}
+      {isKitchenShop && kitchen.data.branches.length > 1 ? (
         <View style={{ paddingHorizontal: Math.max(12, padX - 4), paddingBottom: 6 }}>
           <BranchChips
             branches={kitchen.data.branches}
@@ -438,94 +464,111 @@ export function NewSaleScreen() {
           );
         })}
       </View>
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={[
-          styles.body,
-          {
-            paddingHorizontal: padX,
-            alignItems: contentMaxWidth ? 'center' : undefined,
-            paddingBottom: 20 + kbHeight,
-          },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-      >
-        <View style={[styles.content, contentMaxWidth ? { maxWidth: contentMaxWidth, width: '100%' } : undefined]}>
-          {mode === 'quick' ? (
-            <>
-              <AmountPad
-                amount={amount}
-                onChange={setAmount}
-                stack={calcStack}
-                onPlus={() => pushCalcAmount()}
-                keyHeight={keySize}
-                keyGap={10}
-                displayMinHeight={keySize + 64}
-                valueFontSize={keySize >= 64 ? 52 : 46}
+      {mode === 'products' ? (
+        <View
+          style={[
+            styles.productsSplit,
+            { paddingHorizontal: padX, paddingBottom: kbHeight > 0 ? kbHeight : 0 },
+            contentMaxWidth ? { alignItems: 'center' } : null,
+          ]}
+        >
+          <View style={[styles.productsSplitInner, contentMaxWidth ? { maxWidth: contentMaxWidth, width: '100%' } : { width: '100%', flex: 1 }]}>
+            <View style={styles.searchRow}>
+              <Field
+                value={search}
+                onChangeText={setSearch}
+                onSubmitEditing={() => {
+                  const code = search.trim();
+                  const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
+                  if (!hit) {
+                    if (code) setError(t((m) => m.sale.scanNotFound).replace('{code}', code));
+                    return;
+                  }
+                  setCart((current) => addProductToBill(current, hit, setError));
+                  setSearch('');
+                  setMode('products');
+                }}
+                placeholder={t((m) => m.sale.searchProducts)}
+                autoCapitalize="none"
+                style={styles.searchField}
               />
-              <View style={styles.saveGap}>
-                <FillButton
-                  label={t((m) => m.sale.calcSave)}
-                  color={colors.saleText}
-                  onPress={openCheckout}
-                  disabled={saveTotal <= 0}
-                />
-              </View>
-              {saveTotal > 0 ? holdButton : null}
-              {checkoutOpen ? null : <ErrorText message={error} />}
-            </>
-          ) : null}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t((m) => m.sale.scanBarcode)}
+                onPress={() => setScannerOpen(true)}
+                style={[styles.scanBtn, { backgroundColor: colors.brand }]}
+              >
+                <ScanIcon color={colors.onFill} size={20} />
+                <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
+              </Pressable>
+            </View>
 
-          {mode === 'products' ? (
-            <>
-              <View style={styles.searchRow}>
-                <Field
-                  value={search}
-                  onChangeText={setSearch}
-                  onSubmitEditing={() => {
-                    const code = search.trim();
-                    const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
-                    if (!hit) {
-                      if (code) setError(t((m) => m.sale.scanNotFound).replace('{code}', code));
-                      return;
-                    }
-                    setCart((current) => addProductToBill(current, hit, setError));
-                    setSearch('');
-                    setMode('products');
-                  }}
-                  placeholder={t((m) => m.sale.searchProducts)}
-                  autoCapitalize="none"
-                  style={styles.searchField}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t((m) => m.sale.scanBarcode)}
-                  onPress={() => setScannerOpen(true)}
-                  style={[styles.scanBtn, { backgroundColor: colors.brand }]}
-                >
-                  <ScanIcon color={colors.onFill} size={20} />
-                  <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
-                </Pressable>
-              </View>
+            <ScrollView
+              style={styles.productsScroll}
+              contentContainerStyle={styles.productsScrollBody}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            >
               <View style={styles.grid}>
-                {filteredProducts.map((product) => (
-                  <ProductTile
-                    key={product.id}
-                    name={product.name}
-                    price={productSellingPrice(product).toLocaleString('en-IN')}
-                    stockLabel={product.stock > 0 ? `${product.stock} ${product.unit}` : '—'}
-                    low={product.stock > 0 && product.stock <= 5}
-                    out={product.stock <= 0}
-                    qty={cart.find((l) => l.productId === product.id)?.qty ?? 0}
-                    onPress={() => setCart((lines) => addProductToBill(lines, product, setError))}
-                  />
-                ))}
+                {filteredProducts.map((product) => {
+                  const kind = effectiveSellKind(product, kitchen.data.recipes);
+                  const recipeOk = hasRecipe(product.id, kitchen.data.recipes);
+                  const kindBadge = !isKitchenShop
+                    ? null
+                    : kind === 'simple'
+                      ? 'Simple'
+                      : recipeOk
+                        ? 'Menu'
+                        : 'Needs recipe';
+                  return (
+                    <ProductTile
+                      key={product.id}
+                      name={product.name}
+                      price={productSellingPrice(product).toLocaleString('en-IN')}
+                      stockLabel={product.stock > 0 ? `${product.stock} ${product.unit}` : '—'}
+                      low={product.stock > 0 && product.stock <= 5}
+                      out={product.stock <= 0}
+                      qty={cart.find((l) => l.productId === product.id)?.qty ?? 0}
+                      kindBadge={kindBadge}
+                      onPress={() => setCart((lines) => addProductToBill(lines, product, setError))}
+                    />
+                  );
+                })}
               </View>
+              {!checkoutOpen ? <ErrorText message={error} /> : null}
+              <TodaySalesHistory sales={books.sales} shopName={user?.shopName ?? 'KadaBook'} compact />
+            </ScrollView>
+
+            <View style={[styles.stickyCart, { backgroundColor: colors.white, borderTopColor: colors.hairline }]}>
               {cart.length === 0 ? (
                 <Text style={styles.cartEmpty}>{t((m) => m.sale.cartEmpty)}</Text>
               ) : (
-                <View style={styles.cart}>
+                <ScrollView
+                  style={styles.stickyCartScroll}
+                  contentContainerStyle={styles.stickyCartScrollBody}
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                >
+                  {isKitchenShop
+                    ? (() => {
+                        const missing = cart.filter((line) => {
+                          if (!line.productId) return false;
+                          const product = books.products.find((p) => p.id === line.productId);
+                          if (!product) return false;
+                          return (
+                            effectiveSellKind(product, kitchen.data.recipes) === 'menu' &&
+                            !hasRecipe(product.id, kitchen.data.recipes)
+                          );
+                        });
+                        if (!missing.length) return null;
+                        return (
+                          <Text style={[styles.cartEmpty, { color: colors.expenseText, textAlign: 'left' }]}>
+                            Menu without recipe: {missing.map((m) => m.name).join(', ')}. Add recipe in Kitchen →
+                            Recipes, then Produce → To Foods so stock is ready.
+                          </Text>
+                        );
+                      })()
+                    : null}
                   {cart.map((line) => {
                     const product = books.products.find((p) => p.id === line.productId);
                     return (
@@ -540,7 +583,7 @@ export function NewSaleScreen() {
                       />
                     );
                   })}
-                </View>
+                </ScrollView>
               )}
               <View style={styles.billBar}>
                 <Text style={styles.billTotal}>{formatRs(cartToPay)}</Text>
@@ -555,61 +598,99 @@ export function NewSaleScreen() {
               </View>
               {cart.length > 0 ? holdButton : null}
               {noticeText}
-            </>
-          ) : null}
-
-          {mode === 'saved' ? (
-            <>
-              {books.savedOrders.length === 0 ? (
-                <View style={styles.draftEmpty}>
-                  <Text style={styles.draftEmptyIcon}>🧾</Text>
-                  <Text style={styles.cartEmpty}>{t((m) => m.sale.savedOrdersEmpty)}</Text>
-                </View>
-              ) : (
-                books.savedOrders.map((order) => {
-                  const who = order.customerName || order.customerPhone;
-                  const what = order.kind === 'quick' ? 'Quick sale' : `${order.items.length} item${order.items.length === 1 ? '' : 's'}`;
-                  return (
-                    <View key={order.id} style={styles.draftCard}>
-                      <View style={[styles.draftAvatar, { backgroundColor: who ? colors.brand : colors.keypad }]}>
-                        <Text style={[styles.draftAvatarText, { color: who ? colors.onFill : colors.muted }]}>
-                          {(order.customerName?.trim()[0] ?? '#').toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.cartName} numberOfLines={1}>
-                          {who || 'Walk-in customer'}
-                        </Text>
-                        <Text style={styles.cartMeta} numberOfLines={1}>
-                          {what} · {formatTime(order.savedAt)}
-                        </Text>
-                        <Text style={styles.draftTotal}>{formatRs(order.total)}</Text>
-                      </View>
-                      <Pressable onPress={() => resumeDraft(order)} style={styles.loadBtn}>
-                        <Text style={styles.loadBtnText}>▶ {t((m) => m.sale.loadOrder)}</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          deleteSavedOrder(order.id);
-                          toast.show('info', 'Draft deleted');
-                        }}
-                        style={styles.deleteBtn}
-                      >
-                        <Text style={styles.deleteBtnText}>×</Text>
-                      </Pressable>
-                    </View>
-                  );
-                })
-              )}
-            </>
-          ) : null}
-
-          {mode !== 'quick' && !checkoutOpen ? <ErrorText message={error} /> : null}
-          {mode !== 'quick' ? (
-            <TodaySalesHistory sales={books.sales} shopName={user?.shopName ?? 'KadaBook'} compact />
-          ) : null}
+            </View>
+          </View>
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[
+            styles.body,
+            {
+              paddingHorizontal: padX,
+              alignItems: contentMaxWidth ? 'center' : undefined,
+              paddingBottom: 20 + kbHeight,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        >
+          <View style={[styles.content, contentMaxWidth ? { maxWidth: contentMaxWidth, width: '100%' } : undefined]}>
+            {mode === 'quick' ? (
+              <>
+                <AmountPad
+                  amount={amount}
+                  onChange={setAmount}
+                  stack={calcStack}
+                  onPlus={() => pushCalcAmount()}
+                  keyHeight={keySize}
+                  keyGap={10}
+                  displayMinHeight={keySize + 64}
+                  valueFontSize={keySize >= 64 ? 52 : 46}
+                />
+                <View style={styles.saveGap}>
+                  <FillButton
+                    label={t((m) => m.sale.calcSave)}
+                    color={colors.saleText}
+                    onPress={openCheckout}
+                    disabled={saveTotal <= 0}
+                  />
+                </View>
+                {saveTotal > 0 ? holdButton : null}
+                {checkoutOpen ? null : <ErrorText message={error} />}
+              </>
+            ) : null}
+
+            {mode === 'saved' ? (
+              <>
+                {books.savedOrders.length === 0 ? (
+                  <View style={styles.draftEmpty}>
+                    <Text style={styles.draftEmptyIcon}>🧾</Text>
+                    <Text style={styles.cartEmpty}>{t((m) => m.sale.savedOrdersEmpty)}</Text>
+                  </View>
+                ) : (
+                  books.savedOrders.map((order) => {
+                    const who = order.customerName || order.customerPhone;
+                    const what = order.kind === 'quick' ? 'Quick sale' : `${order.items.length} item${order.items.length === 1 ? '' : 's'}`;
+                    return (
+                      <View key={order.id} style={styles.draftCard}>
+                        <View style={[styles.draftAvatar, { backgroundColor: who ? colors.brand : colors.keypad }]}>
+                          <Text style={[styles.draftAvatarText, { color: who ? colors.onFill : colors.muted }]}>
+                            {(order.customerName?.trim()[0] ?? '#').toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.cartName} numberOfLines={1}>
+                            {who || 'Walk-in customer'}
+                          </Text>
+                          <Text style={styles.cartMeta} numberOfLines={1}>
+                            {what} · {formatTime(order.savedAt)}
+                          </Text>
+                          <Text style={styles.draftTotal}>{formatRs(order.total)}</Text>
+                        </View>
+                        <Pressable onPress={() => resumeDraft(order)} style={styles.loadBtn}>
+                          <Text style={styles.loadBtnText}>▶ {t((m) => m.sale.loadOrder)}</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            deleteSavedOrder(order.id);
+                            toast.show('info', 'Draft deleted');
+                          }}
+                          style={styles.deleteBtn}
+                        >
+                          <Text style={styles.deleteBtnText}>×</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })
+                )}
+                {!checkoutOpen ? <ErrorText message={error} /> : null}
+                <TodaySalesHistory sales={books.sales} shopName={user?.shopName ?? 'KadaBook'} compact />
+              </>
+            ) : null}
+          </View>
+        </ScrollView>
+      )}
       <BarcodeScannerModal
         visible={scannerOpen}
         title={t((m) => m.sale.scanBarcode)}
@@ -661,6 +742,19 @@ function newSaleStyles(c: ColorPalette) {
   },
   modalActions: {
     gap: 10,
+  },
+  dayClosedBanner: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 10,
+  },
+  dayClosedText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    lineHeight: 18,
   },
   dayBar: {
     marginHorizontal: 16,
@@ -867,10 +961,43 @@ function newSaleStyles(c: ColorPalette) {
     fontFamily: fonts.bold,
     textAlign: 'center',
   },
+  productsSplit: {
+    flex: 1,
+  },
+  productsSplitInner: {
+    flex: 1,
+  },
+  // Fixed height ≈ 2 tile rows so ~3–4 products show; rest scroll inside this pane.
+  productsScroll: {
+    height: 270,
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  productsScrollBody: {
+    gap: 10,
+    paddingBottom: 8,
+  },
+  stickyCart: {
+    flex: 1,
+    minHeight: 0,
+    borderTopWidth: 1,
+    paddingTop: 10,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  stickyCartScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  stickyCartScrollBody: {
+    gap: 4,
+    paddingBottom: 4,
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginBottom: 8,
   },
   searchField: {
     flex: 1,

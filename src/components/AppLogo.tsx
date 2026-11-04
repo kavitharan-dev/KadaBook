@@ -1,6 +1,6 @@
 import { Image, type ImageStyle, type StyleProp } from 'react-native';
 
-const localLogo = require('../../assets/logo-transparent.png');
+const localLogo = require('../../assets/logo-app.png');
 
 export function AppLogo({
   size = 44,

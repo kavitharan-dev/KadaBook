@@ -164,6 +164,7 @@ const HEADER_ALIASES: Record<keyof ProductInput, string[]> = {
   reorderLevel: ['reorder level', 'reorder', 'min stock', 'minimum'],
   batchNo: ['batch', 'batch no'],
   expiry: ['expiry', 'expiry date', 'exp'],
+  sellKind: ['sell kind', 'sell type', 'kind', 'menu', 'simple'],
 };
 
 export type ImportPreview = {
@@ -249,6 +250,7 @@ export function parseProductSheet(bytes: Uint8Array, fileName: string, existingN
     const cost = toNumber(cell(r, 'purchasePrice'));
     const stock = toNumber(cell(r, 'stock'));
     const reorder = toNumber(cell(r, 'reorderLevel'));
+    const kindRaw = norm(cell(r, 'sellKind'));
     rows.push({
       name,
       sellingPrice: Math.round(price),
@@ -258,6 +260,7 @@ export function parseProductSheet(bytes: Uint8Array, fileName: string, existingN
       category: String(cell(r, 'category') ?? '').trim().slice(0, 40) || 'General',
       barcode: String(cell(r, 'barcode') ?? '').trim().slice(0, 40) || undefined,
       reorderLevel: Number.isFinite(reorder) && reorder >= 0 ? reorder : undefined,
+      sellKind: kindRaw.includes('menu') || kindRaw.includes('food') ? 'menu' : 'simple',
     });
   });
   if (grid.length > 2001) problems.push({ row: 2002, reason: 'Only the first 2000 rows are imported at a time.' });

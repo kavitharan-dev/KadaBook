@@ -1,7 +1,18 @@
-import type { BillCheckoutInput, Books, DraftInfo, Sale, SaleLine } from '../data/types';
+import type { BillCheckoutInput, Books, DraftInfo, Product, Sale, SaleLine } from '../data/types';
 
 export function lineTotal(qty: number, unitPrice: number) {
   return Math.round(qty * unitPrice);
+}
+
+/** Freeze purchase cost on each line so day profit stays stable after product edits. */
+export function stampSaleLineCosts(items: SaleLine[], products: Product[]): SaleLine[] {
+  return items.map((line) => {
+    if (line.unitCost != null && Number.isFinite(line.unitCost) && line.unitCost >= 0) {
+      return { ...line, unitCost: Math.round(line.unitCost) };
+    }
+    const product = line.productId ? products.find((row) => row.id === line.productId) : undefined;
+    return { ...line, unitCost: product ? Math.round(product.purchasePrice) || 0 : 0 };
+  });
 }
 
 export function billTotal(items: SaleLine[]) {

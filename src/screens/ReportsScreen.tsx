@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -7,6 +7,8 @@ import { MenuIcon } from '../components/Icons';
 import { AccessBlockedModal } from '../components/GateModals';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
 import { FillButton, Header, Screen } from '../components/ui';
+import { PrintButton } from '../components/PrintButton';
+import { Toast, useToast } from '../components/Toast';
 import { FullReports } from '../components/FullReports';
 import { BranchChips } from '../components/kitchen/KitchenUi';
 import { useKitchen } from '../context/KitchenContext';
@@ -18,16 +20,25 @@ import { useI18n } from '../context/LocaleContext';
 import { expenseCategoryMessage } from '../i18n';
 import { useAuth } from '../context/AuthContext';
 import { formatDay, formatRs, formatTime, sum } from '../lib/format';
+import {
+  buildAttachedPeriodReportText,
+  buildAttachedPeriodSummary,
+  buildDayCloseReportText,
+  buildDayCloseSummary,
+  shareDayCloseWhatsApp,
+} from '../lib/dayClose';
 import { buildLowStockReportText } from '../lib/receipt';
-import { buildPeriodReportText, periodReportTitle } from '../lib/periodReport';
+import { periodReportTitle } from '../lib/periodReport';
 import { printTextReport } from '../lib/printReceipt';
 import { lowStockProducts } from '../lib/stockCart';
 import { chartBars, periodExpenses, periodRange } from '../lib/stats';
+import { usePrintFeedback } from '../lib/usePrintFeedback';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { useTheme } from '../context/ThemeContext';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
+import type { Books } from '../data/types';
 
 const MODES = ['daily', 'weekly', 'monthly'] as const;
 type Mode = (typeof MODES)[number];
@@ -51,34 +62,63 @@ export function ReportsScreen() {
   const branchSales = branches.length > 1 ? books.sales.filter((s) => inScope(saleBranch(s, branches), kitchen.scope)) : books.sales;
   const mainId = branches.find((b) => b.isMain)?.id ?? '';
   const branchExpenses = branches.length > 1 ? books.expenses.filter((e) => inScope(e.branchId ?? mainId, kitchen.scope)) : books.expenses;
+  const scopedBooks = useMemo<Books>(
+    () => ({ ...books, sales: branchSales, expenses: branchExpenses }),
+    [books, branchSales, branchExpenses],
+  );
   const reportsOn = useFeature('reports');
   const exportOn = useFeature('export');
   const { canAccess } = useShopGate();
   const [blockedOpen, setBlockedOpen] = useState(false);
   const { user } = useAuth();
   const { t, messages } = useI18n();
+  const toast = useToast();
+  const printFx = usePrintFeedback();
+  const shareFx = usePrintFeedback();
+  const lowStockFx = usePrintFeedback();
   const [mode, setMode] = useState<Mode>('daily');
   const now = Date.now();
   const range = periodRange(mode, now);
   const sales = branchSales.filter((sale) => sale.createdAt >= range.start && sale.createdAt < range.end);
   const expenses = periodExpenses(branchExpenses, mode, now);
-  const salesTotal = sum(sales);
-  const expenseTotal = sum(expenses);
+  const attached = useMemo(
+    () => buildAttachedPeriodSummary(scopedBooks, range, periodReportTitle(mode)),
+    [scopedBooks, range.start, range.end, mode],
+  );
+  const daySummary = useMemo(() => buildDayCloseSummary(scopedBooks, now), [scopedBooks, now]);
+  const salesTotal = mode === 'daily' ? daySummary.totalSales : attached.weeklySales;
+  const expenseTotal = mode === 'daily' ? daySummary.expenses : attached.weeklyExpenses;
+  const profitTotal = mode === 'daily' ? daySummary.finalProfit : attached.weeklyFinal;
   const bars = chartBars(branchSales, mode, now);
   const max = Math.max(1, ...bars.map((bar) => bar.value));
   const recent = books.expenses.slice(0, 3);
   const lowStock = lowStockProducts(books.products);
+  const shopName = user?.shopName ?? 'KadaBook';
+  const shareLabel =
+    shareFx.phase === 'printing'
+      ? t((m) => m.reportsTab.sharing)
+      : shareFx.phase === 'done'
+        ? t((m) => m.reportsTab.shared)
+        : shareFx.phase === 'error'
+          ? t((m) => m.reportsTab.retryShare)
+          : t((m) => m.home.closeWhatsApp);
+
+  function periodBody() {
+    if (mode === 'daily') return buildDayCloseReportText(shopName, daySummary);
+    return buildAttachedPeriodReportText(shopName, attached);
+  }
 
   async function printLowStock() {
     if (!exportOn || !canAccess('exportData')) {
       setBlockedOpen(true);
       return;
     }
-    const body = buildLowStockReportText(user?.shopName ?? 'KadaBook', lowStock);
-    const result = await printTextReport(t((m) => m.settings.lowStock), body);
-    if (!result.ok) {
-      Alert.alert(t((m) => m.settings.printFailed), result.message);
-    }
+    const result = await lowStockFx.run(async () =>
+      printTextReport(t((m) => m.settings.lowStock), buildLowStockReportText(shopName, lowStock)),
+    );
+    if (!result) return;
+    if (result.ok) toast.show('success', t((m) => m.reportsTab.printOk));
+    else Alert.alert(t((m) => m.settings.printFailed), result.message);
   }
 
   async function printPeriodReport() {
@@ -86,20 +126,22 @@ export function ReportsScreen() {
       setBlockedOpen(true);
       return;
     }
-    const body = buildPeriodReportText({
-      shopName: user?.shopName ?? 'KadaBook',
-      mode,
-      range,
-      sales,
-      expenses,
-      bars,
-      expenseLabel: (category) => expenseCategoryMessage(messages, category),
-    });
-    const title = `${periodReportTitle(mode)} — ${user?.shopName ?? 'KadaBook'}`;
-    const result = await printTextReport(title, body);
-    if (!result.ok) {
-      Alert.alert(t((m) => m.settings.printFailed), result.message);
+    const title = `${periodReportTitle(mode)} — ${shopName}`;
+    const result = await printFx.run(async () => printTextReport(title, periodBody()));
+    if (!result) return;
+    if (result.ok) toast.show('success', t((m) => m.reportsTab.printOk));
+    else Alert.alert(t((m) => m.settings.printFailed), result.message);
+  }
+
+  async function sharePeriodWhatsApp() {
+    if (!exportOn || !canAccess('exportData')) {
+      setBlockedOpen(true);
+      return;
     }
+    const result = await shareFx.run(async () => shareDayCloseWhatsApp(periodBody()));
+    if (!result) return;
+    if (result.ok) toast.show('success', t((m) => m.reportsTab.shareOk));
+    else Alert.alert(t((m) => m.settings.printFailed), result.message);
   }
 
   if (!reportsOn) {
@@ -114,6 +156,7 @@ export function ReportsScreen() {
   return (
     <Screen>
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
+      <Toast toast={toast.toast} onHide={toast.hide} />
       <Header
         title={t((m) => m.reportsTab.title)}
         onBack={() => navigation.navigate('Home')}
@@ -142,15 +185,64 @@ export function ReportsScreen() {
           })}
         </View>
         <Text style={styles.date}>{mode === 'daily' ? formatDay(now) : `${formatDay(range.start)} – ${formatDay(range.end - 1)}`}</Text>
+        {mode === 'daily' ? (
+          <View style={styles.metrics}>
+            <Metric
+              label={t((m) => m.home.closeOpeningCash)}
+              value={formatRs(daySummary.openingCash)}
+              wash={colors.keypad}
+              ink={colors.ink}
+            />
+          </View>
+        ) : null}
         <View style={styles.metrics}>
-          <Metric label={t((m) => m.reportsTab.sales)} value={formatRs(salesTotal)} wash={colors.saleWash} ink={colors.saleText} />
+          <Metric
+            label={
+              mode === 'weekly'
+                ? t((m) => m.reportsTab.weeklySales)
+                : mode === 'monthly'
+                  ? t((m) => m.reportsTab.monthlySales)
+                  : t((m) => m.reportsTab.sales)
+            }
+            value={formatRs(salesTotal)}
+            wash={colors.saleWash}
+            ink={colors.saleText}
+          />
           <Metric label={t((m) => m.reportsTab.expenses)} value={formatRs(expenseTotal)} wash={colors.expenseWash} ink={colors.expenseText} />
-          <Metric label={t((m) => m.reportsTab.profit)} value={formatRs(salesTotal - expenseTotal)} wash={colors.gradientTop} ink={colors.profitText} />
+          <Metric
+            label={
+              mode === 'weekly'
+                ? t((m) => m.reportsTab.weeklyFinal)
+                : mode === 'monthly'
+                  ? t((m) => m.reportsTab.monthlyFinal)
+                  : t((m) => m.reportsTab.profit)
+            }
+            value={formatRs(profitTotal)}
+            wash={colors.gradientTop}
+            ink={colors.profitText}
+          />
         </View>
-        <FillButton
+        {mode === 'weekly' ? (
+          <Text style={styles.weekHint}>{t((m) => m.reportsTab.weeklyHint)}</Text>
+        ) : null}
+        {mode === 'monthly' ? (
+          <Text style={styles.weekHint}>{t((m) => m.reportsTab.monthlyHint)}</Text>
+        ) : null}
+        <PrintButton
+          large
+          phase={printFx.phase}
           label={t((m) => m.reportsTab.printPeriod)}
-          color={colors.brand}
-          onPress={() => printPeriodReport()}
+          onPress={() => {
+            void printPeriodReport();
+          }}
+        />
+        <FillButton
+          label={shareLabel}
+          color={shareFx.phase === 'done' ? colors.saleText : shareFx.phase === 'error' ? colors.expenseText : colors.saleText}
+          busy={shareFx.phase === 'printing'}
+          onPress={() => {
+            void sharePeriodWhatsApp();
+          }}
         />
         <View style={styles.chart}>
           <View style={styles.bars}>
@@ -204,8 +296,20 @@ export function ReportsScreen() {
         )}
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>{t((m) => m.settings.lowStock)}</Text>
-          <Pressable onPress={() => printLowStock()} style={styles.viewAll}>
-            <Text style={styles.viewAllText}>{t((m) => m.settings.printReport)}</Text>
+          <Pressable
+            onPress={() => {
+              void printLowStock();
+            }}
+            disabled={lowStockFx.phase === 'printing'}
+            style={styles.viewAll}
+          >
+            <Text style={styles.viewAllText}>
+              {lowStockFx.phase === 'printing'
+                ? 'Printing…'
+                : lowStockFx.phase === 'done'
+                  ? '✓ Printed'
+                  : t((m) => m.settings.printReport)}
+            </Text>
           </Pressable>
         </View>
         {lowStock.length === 0 ? (
@@ -276,6 +380,12 @@ function reportsStyles(c: ColorPalette) {
     fontFamily: fonts.semibold,
     fontSize: 15,
     color: c.ink,
+  },
+  weekHint: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    color: c.muted,
   },
   metrics: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -25,16 +25,25 @@ import { PulsingDot } from '../components/PulsingDot';
 import { AppLogo } from '../components/AppLogo';
 import { RemoteHomePromo } from '../components/RemoteHomePromo';
 import { OpeningBalanceModal } from '../components/OpeningBalanceModal';
-import { Screen, SyncNotice } from '../components/ui';
+import { CloseDayModal } from '../components/CloseDayModal';
+import { Toast, useToast } from '../components/Toast';
+import { FillButton, Screen, SyncNotice } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
 import { useI18n } from '../context/LocaleContext';
 import { formatRs, isSameDay, startOfDay, sum } from '../lib/format';
-import { dayKey, openingBalanceForDay } from '../lib/dayKey';
+import { dayClosedAt, dayKey, openingBalanceForDay } from '../lib/dayKey';
+import {
+  buildDayCloseReportText,
+  buildDayCloseSummary,
+  printDayCloseReport,
+  shareDayCloseWhatsApp,
+} from '../lib/dayClose';
 import { useRole } from '../lib/roles';
 import { usesKitchenStock } from '../lib/shopType';
 import { changePercent } from '../lib/stats';
 import { markOpeningPromptDay, needsOpeningBalancePrompt, readOpeningPromptDay } from '../lib/openingPrompt';
+import { usePrintFeedback } from '../lib/usePrintFeedback';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { useTheme } from '../context/ThemeContext';
 import { fonts } from '../theme/fonts';
@@ -62,21 +71,34 @@ export function HomeScreen() {
     NativeStackNavigationProp<AppStackParamList>
   >>();
   const { user } = useAuth();
-  const { books, error, loading, setTodayOpeningBalance } = useBooks();
+  const { books, error, loading, setTodayOpeningBalance, editTodayOpeningBalance, todayClosed, closeToday, resumeToday } = useBooks();
   const { t } = useI18n();
   const { colors } = useTheme();
   const { canAccess, profile } = useShopGate();
-  const { can } = useRole();
+  const { can, role } = useRole();
+  const isCashier = role === 'cashier';
+  const isOwner = role === 'owner';
   const showKitchen = usesKitchenStock(profile?.shopType ?? user?.shopType) && can('manageStock');
   const salesOn = useFeature('sales');
   const expensesOn = useFeature('expenses');
   const productsOn = useFeature('products');
   const reportsOn = useFeature('reports');
   const flags = { sales: salesOn, expenses: expensesOn, products: productsOn, reports: reportsOn };
+  const homeActions = ACTIONS.filter((action) => {
+    if (!flags[action.flag]) return false;
+    if (!isCashier) return true;
+    return action.key === 'sale' || action.key === 'credit';
+  });
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [openingModal, setOpeningModal] = useState(false);
+  const [openingEditing, setOpeningEditing] = useState(false);
   const [openingInput, setOpeningInput] = useState('');
   const [openingBusy, setOpeningBusy] = useState(false);
+  const [closeModal, setCloseModal] = useState(false);
+  const [closeBusy, setCloseBusy] = useState(false);
+  const toast = useToast();
+  const closePrintFx = usePrintFeedback();
+  const closeShareFx = usePrintFeedback();
   const [localPromptDay, setLocalPromptDay] = useState<string | null>(null);
   const [promptReady, setPromptReady] = useState(false);
   const now = Date.now();
@@ -95,6 +117,8 @@ export function HomeScreen() {
   const monthProfit = monthSales - monthExpenses;
   const margin = monthSales > 0 ? Math.round((monthProfit / monthSales) * 100) : 0;
   const hasToday = todaySales > 0 || books.expenses.some((expense) => isSameDay(expense.createdAt, now));
+  const daySummary = useMemo(() => buildDayCloseSummary(books, now), [books, todayKey]);
+  const closedAt = dayClosedAt(books.meta, now);
 
   useEffect(() => {
     readOpeningPromptDay().then((day) => {
@@ -108,6 +132,11 @@ export function HomeScreen() {
     setOpeningModal(needsOpeningBalancePrompt(books.meta, Date.now(), localPromptDay));
   }, [loading, promptReady, books.meta.openingBalances, localPromptDay, todayKey]);
 
+  // New calendar day → dismiss close/resume sheet (Resume is same-day only).
+  useEffect(() => {
+    setCloseModal(false);
+  }, [todayKey]);
+
   const confirmOpening = useCallback(
     async (skip: boolean) => {
       setOpeningBusy(true);
@@ -118,23 +147,125 @@ export function HomeScreen() {
         setLocalPromptDay(dayKey(now));
         setOpeningModal(false);
         setOpeningInput('');
+      } catch (caught) {
+        Alert.alert(
+          t((m) => m.sale.openingTitle),
+          caught instanceof Error ? caught.message : t((m) => m.sale.errorSave),
+        );
       } finally {
         setOpeningBusy(false);
       }
     },
-    [openingInput, setTodayOpeningBalance],
+    [openingInput, setTodayOpeningBalance, t],
   );
+
+  const startOpeningEdit = useCallback(() => {
+    setOpeningInput(String(openingToday));
+    setOpeningEditing(true);
+  }, [openingToday]);
+
+  const cancelOpeningEdit = useCallback(() => {
+    setOpeningEditing(false);
+    setOpeningInput('');
+  }, []);
+
+  const saveOpeningEdit = useCallback(async () => {
+    setOpeningBusy(true);
+    try {
+      await editTodayOpeningBalance(Math.max(0, Math.round(Number(openingInput) || 0)));
+      setOpeningEditing(false);
+      setOpeningInput('');
+    } catch (caught) {
+      Alert.alert(
+        t((m) => m.sale.openingEditTitle),
+        caught instanceof Error ? caught.message : t((m) => m.sale.errorSave),
+      );
+    } finally {
+      setOpeningBusy(false);
+    }
+  }, [editTodayOpeningBalance, openingInput, t]);
+
+  const runClosePrint = useCallback(async () => {
+    const result = await closePrintFx.run(() =>
+      printDayCloseReport(user?.shopName ?? 'KadaBook', daySummary, closedAt),
+    );
+    if (!result) return;
+    if (result.ok) toast.show('success', t((m) => m.reportsTab.printOk));
+    else Alert.alert(t((m) => m.home.closeFailed), result.message);
+  }, [closePrintFx, closedAt, daySummary, t, toast, user?.shopName]);
+
+  const runCloseWhatsApp = useCallback(async () => {
+    const text = buildDayCloseReportText(user?.shopName ?? 'KadaBook', daySummary, closedAt);
+    const result = await closeShareFx.run(() => shareDayCloseWhatsApp(text));
+    if (!result) return;
+    if (result.ok) toast.show('success', t((m) => m.reportsTab.shareOk));
+    else Alert.alert(t((m) => m.home.closeFailed), result.message);
+  }, [closeShareFx, closedAt, daySummary, t, toast, user?.shopName]);
+
+  const confirmCloseDay = useCallback(async () => {
+    setCloseBusy(true);
+    try {
+      await closeToday();
+      toast.show('success', t((m) => m.home.dayClosedTitle));
+      setCloseModal(false);
+    } catch (caught) {
+      Alert.alert(
+        t((m) => m.home.closeFailed),
+        caught instanceof Error ? caught.message : t((m) => m.home.closeFailed),
+      );
+    } finally {
+      setCloseBusy(false);
+    }
+  }, [closeToday, t, toast]);
+
+  const confirmResumeDay = useCallback(async () => {
+    setCloseBusy(true);
+    try {
+      await resumeToday();
+      setCloseModal(false);
+    } catch (caught) {
+      Alert.alert(
+        t((m) => m.home.resumeFailed),
+        caught instanceof Error ? caught.message : t((m) => m.home.resumeFailed),
+      );
+    } finally {
+      setCloseBusy(false);
+    }
+  }, [resumeToday, t]);
 
   return (
     <Screen>
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
       <OpeningBalanceModal
-        visible={openingModal}
+        visible={openingModal || openingEditing}
         value={openingInput}
         onChangeValue={setOpeningInput}
         busy={openingBusy}
-        onSkip={() => confirmOpening(true)}
-        onSave={() => confirmOpening(false)}
+        editing={openingEditing}
+        onSkip={() => (openingEditing ? cancelOpeningEdit() : confirmOpening(true))}
+        onSave={() => (openingEditing ? saveOpeningEdit() : confirmOpening(false))}
+      />
+      <Toast toast={toast.toast} onHide={toast.hide} />
+      <CloseDayModal
+        visible={closeModal}
+        summary={daySummary}
+        alreadyClosed={todayClosed}
+        busy={closeBusy}
+        printPhase={closePrintFx.phase}
+        sharePhase={closeShareFx.phase}
+        onClose={() => setCloseModal(false)}
+        onPrint={() => {
+          void runClosePrint();
+        }}
+        onWhatsApp={() => {
+          void runCloseWhatsApp();
+        }}
+        onConfirmClose={() => {
+          void confirmCloseDay();
+        }}
+        onResume={() => {
+          void confirmResumeDay();
+        }}
       />
       <View style={styles.top}>
         <AnimatedIconPress accessibilityLabel="Menu" onPress={() => navigation.navigate('More')} style={styles.iconButton}>
@@ -169,6 +300,27 @@ export function HomeScreen() {
         <SyncNotice
           message={error ? `${error} ${t((m) => m.home.syncError)}` : null}
         />
+        {todayClosed ? (
+          <View style={[styles.dayCloseBanner, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+            <Text style={[styles.dayCloseBannerText, { color: colors.ink }]}>{t((m) => m.home.dayClosedBanner)}</Text>
+            <View style={styles.dayCloseBannerActions}>
+              <FillButton
+                label={t((m) => m.home.resumeSales)}
+                onPress={() => {
+                  void confirmResumeDay();
+                }}
+                busy={closeBusy}
+                color={colors.saleText}
+              />
+              <FillButton
+                label={t((m) => m.home.viewDayClose)}
+                onPress={() => setCloseModal(true)}
+                busy={closeBusy}
+                color={colors.line}
+              />
+            </View>
+          </View>
+        ) : null}
         <View>
           <HeroSalesCard
             delay={40}
@@ -186,10 +338,13 @@ export function HomeScreen() {
             viewLabel={t((m) => m.home.view)}
             Icon={TrendDuoIcon}
             onPress={() => navigation.navigate('Sales')}
+            onLongPress={isOwner ? startOpeningEdit : undefined}
           />
-          <View style={styles.trialSlot}>
-            <TrialChip />
-          </View>
+          {!isCashier ? (
+            <View style={styles.trialSlot}>
+              <TrialChip />
+            </View>
+          ) : null}
         </View>
         <FadeUp delay={160} style={[styles.panel, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
           <View style={[styles.panelHead, { borderBottomColor: colors.hairline }]}>
@@ -197,7 +352,7 @@ export function HomeScreen() {
             <Text style={[styles.panelTitle, { color: colors.brand }]}>{t((m) => m.home.quickActions)}</Text>
           </View>
           <View style={styles.grid}>
-            {ACTIONS.filter((action) => flags[action.flag]).map((action, index) => (
+            {homeActions.map((action, index) => (
               <HomeActionTile
                 key={action.key}
                 delay={220 + index * 90}
@@ -209,14 +364,15 @@ export function HomeScreen() {
                     setBlockedOpen(true);
                     return;
                   }
+                  // When closed, still open New Sale so the closed banner + Resume show.
                   navigation.navigate(action.route);
                 }}
               />
             ))}
-            {showKitchen ? (
+            {showKitchen && !isCashier ? (
               <HomeActionTile
                 key="kitchen"
-                delay={220 + ACTIONS.length * 90}
+                delay={220 + homeActions.length * 90}
                 gradient={gradients.red}
                 label={t((m) => m.home.kitchenStock)}
                 Icon={GridDuoIcon}
@@ -276,12 +432,40 @@ export function HomeScreen() {
             style={styles.statFull}
           />
         </View>
+        {salesOn && !todayClosed ? (
+          <View style={styles.dayCloseBottom}>
+            <FillButton
+              label={t((m) => m.home.closeDay)}
+              onPress={() => setCloseModal(true)}
+              color={colors.brand}
+            />
+          </View>
+        ) : null}
       </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  dayCloseBottom: {
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  dayCloseBanner: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    gap: 10,
+    marginBottom: 10,
+  },
+  dayCloseBannerText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  dayCloseBannerActions: {
+    gap: 8,
+  },
   top: {
     minHeight: 52,
     paddingHorizontal: 8,

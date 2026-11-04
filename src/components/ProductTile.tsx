@@ -11,10 +11,12 @@ type Props = {
   out: boolean;
   /** Quantity already in the bill; > 0 keeps the tile highlighted with a count badge. */
   qty: number;
+  /** Kitchen shops: Simple / Menu / Needs recipe */
+  kindBadge?: string | null;
   onPress: () => void;
 };
 
-export function ProductTile({ name, price, stockLabel, low, out, qty, onPress }: Props) {
+export function ProductTile({ name, price, stockLabel, low, out, qty, kindBadge, onPress }: Props) {
   const { colors } = useTheme();
   const flash = useRef(new Animated.Value(0)).current;
   const pop = useRef(new Animated.Value(1)).current;
@@ -52,6 +54,11 @@ export function ProductTile({ name, price, stockLabel, low, out, qty, onPress }:
       >
         {low ? (
           <Text style={[styles.lowTag, { color: colors.onFill, backgroundColor: colors.danger }]}>Low</Text>
+        ) : null}
+        {kindBadge ? (
+          <Text style={[styles.kindTag, { color: colors.brand, backgroundColor: colors.gradientTop }]} numberOfLines={1}>
+            {kindBadge}
+          </Text>
         ) : null}
         <Text style={[styles.name, { color: colors.ink }]} numberOfLines={2}>
           {name}
@@ -96,6 +103,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderTopRightRadius: 4,
     borderBottomRightRadius: 4,
+  },
+  kindTag: {
+    alignSelf: 'flex-start',
+    overflow: 'hidden',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    fontFamily: fonts.semibold,
+    fontSize: 10,
+    marginBottom: 2,
   },
   name: {
     fontFamily: fonts.semibold,

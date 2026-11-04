@@ -30,11 +30,12 @@ export function tryMergeCartLine(cart: SaleLine[], product: Product, qty: number
   const check = canAddProductToCart(product, cart, qty);
   if (!check.ok) return null;
   const existing = cart.find((line) => line.productId === product.id);
+  const unitCost = Math.round(product.purchasePrice) || 0;
   if (existing) {
     const nextQty = existing.qty + qty;
     return cart.map((line) =>
       line.productId === product.id
-        ? { ...line, qty: nextQty, lineTotal: Math.round(nextQty * unitPrice) }
+        ? { ...line, qty: nextQty, unitPrice, unitCost, lineTotal: Math.round(nextQty * unitPrice) }
         : line,
     );
   }
@@ -45,6 +46,7 @@ export function tryMergeCartLine(cart: SaleLine[], product: Product, qty: number
       name: product.name,
       qty,
       unitPrice,
+      unitCost,
       lineTotal: Math.round(qty * unitPrice),
     },
   ];

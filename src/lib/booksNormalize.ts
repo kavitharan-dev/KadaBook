@@ -42,6 +42,11 @@ export function normalizeBooks(raw: Partial<Books> | null | undefined): Books {
     meta: {
       nextInvoice: raw.meta?.nextInvoice ?? 1,
       openingBalances: raw.meta?.openingBalances ?? {},
+      closedDays: raw.meta?.closedDays ?? {},
+      quickSaleProfitPercent:
+        typeof raw.meta?.quickSaleProfitPercent === 'number' && Number.isFinite(raw.meta.quickSaleProfitPercent)
+          ? Math.min(100, Math.max(0, Math.round(raw.meta.quickSaleProfitPercent)))
+          : undefined,
       customExpenseCategories: Array.isArray(raw.meta?.customExpenseCategories)
         ? raw.meta.customExpenseCategories.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
         : [],

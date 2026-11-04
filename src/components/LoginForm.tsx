@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Platform,
   Pressable,
@@ -67,10 +67,40 @@ function LockIcon({ stroke }: { stroke: string }) {
   );
 }
 
+function EyeIcon({ stroke, open }: { stroke: string; open: boolean }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 20 20">
+      <Path
+        d="M1.75 10S4.5 4.75 10 4.75 18.25 10 18.25 10 15.5 15.25 10 15.25 1.75 10 1.75 10Z"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M10 12.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1.5}
+      />
+      {open ? null : (
+        <Path
+          d="M3.5 3.5 16.5 16.5"
+          fill="none"
+          stroke={stroke}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+        />
+      )}
+    </Svg>
+  );
+}
+
 function Field({
   icon,
+  trailing,
   ...inputProps
-}: TextInputProps & { icon: 'mail' | 'lock' }) {
+}: TextInputProps & { icon: 'mail' | 'lock'; trailing?: ReactNode }) {
   const { colors } = useTheme();
   const styles = useStyleSheet(loginFormStyles);
   return (
@@ -82,6 +112,7 @@ function Field({
         underlineColorAndroid="transparent"
         style={[styles.input, webInputFix]}
       />
+      {trailing}
     </View>
   );
 }
@@ -96,9 +127,11 @@ type LoginFormProps = {
 
 export function LoginForm({ busy, error, onLogin, onForgot, onCreate }: LoginFormProps) {
   const { t } = useI18n();
+  const { colors } = useTheme();
   const styles = useStyleSheet(loginFormStyles);
   const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <View style={styles.form}>
@@ -121,12 +154,23 @@ export function LoginForm({ busy, error, onLogin, onForgot, onCreate }: LoginFor
         onChangeText={setPassword}
         placeholder={t((m) => m.login.password)}
         accessibilityLabel={t((m) => m.login.password)}
-        secureTextEntry
+        secureTextEntry={!showPassword}
         autoCapitalize="none"
         autoCorrect={false}
         textContentType="password"
         autoComplete="password"
         returnKeyType="done"
+        trailing={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            hitSlop={8}
+            onPress={() => setShowPassword((v) => !v)}
+            style={styles.eyeBtn}
+          >
+            <EyeIcon stroke={colors.placeholder} open={showPassword} />
+          </Pressable>
+        }
       />
       <LoginButton disabled={busy} label={t((m) => m.login.login)} onPress={() => onLogin(identity, password)} />
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -179,6 +223,12 @@ function loginFormStyles(c: ColorPalette) {
     fontSize: 15,
     color: c.ink,
     includeFontPadding: false,
+  },
+  eyeBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   forgot: {
     height: 44,

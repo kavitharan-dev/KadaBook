@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useNavigation } from '@react-navigation/native';
 import { MaterialForm, MoveForm, RecipeForm, type MoveKind } from '../components/kitchen/KitchenForms';
 import { MaterialCatalogSheet } from '../components/kitchen/MaterialCatalogSheet';
-import { BranchChips, Chip, Input, Sheet, kitchenStyles } from '../components/kitchen/KitchenUi';
+import { BranchChips, Chip, Input, Sheet } from '../components/kitchen/KitchenUi';
 import { CATALOG_CATEGORIES } from '../data/rawMaterialCatalog';
 import { Toast, useToast } from '../components/Toast';
 import { FillButton, Header, Screen } from '../components/ui';
@@ -17,17 +17,19 @@ import { formatDay, formatRs, formatTime, startOfDay } from '../lib/format';
 import {
   cogsSummary,
   formatQty,
+  readyMaterialFor,
   recipeFor,
   stockLevels,
   transferSummary,
   varianceReport,
 } from '../lib/kitchenOps';
+import { effectiveSellKind } from '../lib/productSell';
 import { maybeNotifyKitchenLowStock } from '../lib/kitchenLowStockNotify';
 import { shareKitchenReport } from '../lib/kitchenReportShare';
 import { fonts } from '../theme/fonts';
 import { useRole } from '../lib/roles';
 
-type Tab = 'stock' | 'menu' | 'moves' | 'suppliers' | 'reports';
+type Tab = 'stock' | 'recipes' | 'moves' | 'suppliers' | 'reports';
 type Period = 'today' | 'week' | 'month' | 'lastMonth';
 
 function periodBounds(period: Period, now = Date.now()) {
@@ -43,13 +45,38 @@ function periodBounds(period: Period, now = Date.now()) {
   return { start: new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime(), end: monthStart };
 }
 
-const ACTIONS: { kind: MoveKind; icon: string; label: string }[] = [
-  { kind: 'purchase', icon: '🛒', label: 'Purchase' },
-  { kind: 'transfer', icon: '🚚', label: 'Transfer' },
-  { kind: 'produce', icon: '🍔', label: 'Produce' },
-  { kind: 'wastage', icon: '🗑', label: 'Wastage' },
-  { kind: 'count', icon: '📋', label: 'Stock count' },
+const TABS: { key: Tab; icon: string; label: string }[] = [
+  { key: 'stock', icon: '📦', label: 'Stock' },
+  { key: 'recipes', icon: '🧾', label: 'Recipes' },
+  { key: 'moves', icon: '↕️', label: 'Moves' },
+  { key: 'suppliers', icon: '💳', label: 'Pay' },
+  { key: 'reports', icon: '📊', label: 'Reports' },
 ];
+
+const STOCK_ACTIONS: { kind: MoveKind; icon: string; label: string }[] = [
+  { kind: 'purchase', icon: '🛒', label: 'Stock in' },
+  { kind: 'wastage', icon: '🗑️', label: 'Wastage' },
+  { kind: 'count', icon: '📋', label: 'Count' },
+  { kind: 'transfer', icon: '🔀', label: 'Branch' },
+];
+
+const RECIPE_ACTIONS: { kind: MoveKind; icon: string; label: string }[] = [
+  { kind: 'produce', icon: '👨‍🍳', label: 'Produce' },
+  { kind: 'toFoods', icon: '🏪', label: 'To Foods' },
+];
+
+const CATEGORY_ICON: Record<string, string> = {
+  'Meat & Protein': '🥩',
+  'Bakery & Bread': '🍞',
+  Vegetables: '🥬',
+  'Dairy & Cheese': '🧀',
+  Sauces: '🧴',
+  Spices: '🌶️',
+  Frozen: '❄️',
+  Cooking: '🔥',
+  Packaging: '📦',
+  'Prepared / Ready': '🍔',
+};
 
 export function KitchenScreen() {
   const navigation = useNavigation();
@@ -62,6 +89,7 @@ export function KitchenScreen() {
   const [tab, setTab] = useState<Tab>('stock');
   const [period, setPeriod] = useState<Period>('month');
   const [move, setMove] = useState<MoveKind | null>(null);
+  const [moveProductId, setMoveProductId] = useState<string | null>(null);
   const [editMaterial, setEditMaterial] = useState<RawMaterial | null | 'new'>(null);
   const [recipeProduct, setRecipeProduct] = useState<Product | null>(null);
   const [branchName, setBranchName] = useState('');
@@ -71,29 +99,45 @@ export function KitchenScreen() {
   const [supplierSheet, setSupplierSheet] = useState<'new' | Supplier | null>(null);
 
   const stock = useMemo(() => stockLevels(data, scope), [data, scope]);
-  const stockValue = data.materials.reduce((sum, m) => sum + Math.max(0, stock[m.id] ?? 0) * m.avgCost, 0);
-  const low = data.materials.filter((m) => m.reorderLevel > 0 && (stock[m.id] ?? 0) <= m.reorderLevel);
+  const rawMaterials = useMemo(() => data.materials.filter((m) => !m.productId), [data.materials]);
+  const stockValue = rawMaterials.reduce((sum, m) => sum + Math.max(0, stock[m.id] ?? 0) * m.avgCost, 0);
+  const low = rawMaterials.filter((m) => m.reorderLevel > 0 && (stock[m.id] ?? 0) <= m.reorderLevel);
 
   useEffect(() => {
     if (k.loading || data.branches.length === 0) return;
-    void maybeNotifyKitchenLowStock(data.materials, stock);
+    void maybeNotifyKitchenLowStock(rawMaterials, stock);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [k.loading, data.materials.length, low.length]);
+  }, [k.loading, rawMaterials.length, low.length]);
   const categories = useMemo(() => {
-    const fromData = data.materials.map((m) => m.category).filter((c): c is string => !!c);
+    const fromData = rawMaterials.map((m) => m.category).filter((c): c is string => !!c);
     return Array.from(new Set([...CATALOG_CATEGORIES, ...fromData]));
-  }, [data.materials]);
+  }, [rawMaterials]);
   const visibleMaterials = useMemo(
     () =>
       categoryFilter === 'all'
-        ? data.materials
-        : data.materials.filter((m) => (m.category ?? '') === categoryFilter),
-    [data.materials, categoryFilter],
+        ? rawMaterials
+        : rawMaterials.filter((m) => (m.category ?? '') === categoryFilter),
+    [rawMaterials, categoryFilter],
+  );
+  // Only Kitchen food (Menu) products — Simple sell (Coke/bottle) stays out of Recipes.
+  const foodProducts = useMemo(
+    () =>
+      books.products
+        .filter((p) => effectiveSellKind(p, data.recipes) === 'menu')
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [books.products, data.recipes],
   );
   const branchName_ = (id?: string) => data.branches.find((b) => b.id === id)?.name ?? '—';
 
+  const openMove = (kind: MoveKind, productId?: string) => {
+    setMoveProductId(productId ?? null);
+    setMove(kind);
+  };
+
   const done = (message: string) => {
     setMove(null);
+    setMoveProductId(null);
     setEditMaterial(null);
     setRecipeProduct(null);
     toast.show('success', message);
@@ -121,7 +165,7 @@ export function KitchenScreen() {
             <Text style={styles.heroIcon}>🍔</Text>
             <Text style={[styles.heroTitle, { color: colors.ink }]}>Kitchen & Stock</Text>
             <Text style={[styles.heroText, { color: colors.muted }]}>
-              Track raw materials, cost per menu item, transfers between branches and where stock goes missing.
+              Stock in raw materials → save recipes → Produce → Transfer to Foods → sell at cashier.
             </Text>
           </View>
           {can('manageBranches') ? (
@@ -139,36 +183,47 @@ export function KitchenScreen() {
     );
   }
 
+  const recipeCount = data.recipes.length;
+  const menuFoodCount = books.products.filter((p) => effectiveSellKind(p, data.recipes) === 'menu').length;
+  const readyTotal = foodProducts.reduce((sum, p) => {
+    const ready = readyMaterialFor(p.id, data.materials);
+    return sum + (ready ? Math.max(0, stock[ready.id] ?? 0) : 0);
+  }, 0);
+
   return (
     <Screen>
       <Header title="Kitchen & Stock" onBack={() => navigation.goBack()} />
-      <View style={styles.top}>
+      <View style={[styles.top, { backgroundColor: colors.canvas }]}>
         <BranchChips branches={data.branches} value={scope} onChange={setScope} onAdd={can('manageBranches') ? () => setAddingBranch(true) : undefined} />
-        <View style={[styles.tabs, { backgroundColor: colors.keypad }]}>
-          {(
-            [
-              ['stock', 'Stock'],
-              ['menu', 'Menu'],
-              ['moves', 'Moves'],
-              ['suppliers', 'Payables'],
-              ['reports', 'Reports'],
-            ] as [Tab, string][]
-          ).map(([key, label]) => (
-            <Pressable key={key} onPress={() => setTab(key)} style={[styles.tab, tab === key && { backgroundColor: colors.white }]}>
-              <Text style={[styles.tabText, { color: tab === key ? colors.brand : colors.muted }]}>{label}</Text>
-            </Pressable>
-          ))}
+        <View style={[styles.tabs, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+          {TABS.map((item) => {
+            const on = tab === item.key;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => setTab(item.key)}
+                style={[styles.tab, on && { backgroundColor: '#E8F1FF' }]}
+              >
+                <Text style={styles.tabIcon}>{item.icon}</Text>
+                <Text style={[styles.tabText, { color: on ? colors.brand : colors.muted }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView contentContainerStyle={[styles.body, { backgroundColor: colors.canvas }]} style={{ backgroundColor: colors.canvas }}>
         {tab === 'stock' ? (
           <>
-            <View style={kitchenStyles.row}>
-              <Tile label="STOCK VALUE" value={formatRs(stockValue)} />
-              <Tile label="LOW STOCK" value={String(low.length)} tone={low.length ? colors.expenseText : undefined} />
-              <Tile label="MATERIALS" value={String(data.materials.length)} />
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Summary</Text>
+            <View style={styles.statGrid}>
+              <DashStat icon="💰" label="STOCK VALUE" value={formatRs(stockValue)} color="#7C3AED" sub="Raw materials on hand" />
+              <DashStat icon="⚠️" label="LOW STOCK" value={String(low.length)} color="#EF4444" sub={low.length ? 'Need reorder' : 'All ok'} />
+              <DashStat icon="📦" label="RAW ITEMS" value={String(rawMaterials.length)} color="#0D9488" sub={scope === 'all' ? 'All branches' : branchName_(scope)} />
             </View>
+
             {low.length > 0 ? (
               <View style={[styles.alertBanner, { backgroundColor: colors.expenseWash, borderColor: colors.expenseText }]}>
                 <Text style={[styles.alertTitle, { color: colors.expenseText }]}>Low stock · {low.length} item{low.length === 1 ? '' : 's'}</Text>
@@ -181,47 +236,48 @@ export function KitchenScreen() {
                 </Text>
               </View>
             ) : null}
-            <View style={styles.actions}>
-              {ACTIONS.map((a) => (
-                <Pressable key={a.kind} onPress={() => setMove(a.kind)} style={[styles.action, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
-                  <Text style={styles.actionIcon}>{a.icon}</Text>
-                  <Text style={[styles.actionText, { color: colors.ink }]}>{a.label}</Text>
-                </Pressable>
+
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Quick links</Text>
+            <View style={styles.quickGrid}>
+              {STOCK_ACTIONS.map((a) => (
+                <QuickLink key={a.kind} icon={a.icon} label={a.label} onPress={() => openMove(a.kind)} />
               ))}
+              <QuickLink icon="📚" label="Catalog" onPress={() => setCatalogOpen(true)} />
+              <QuickLink icon="➕" label="Add raw" onPress={() => setEditMaterial('new')} />
             </View>
-            <View style={styles.sectionRow}>
-              <Text style={[styles.section, { color: colors.ink }]}>
-                Raw materials{scope === 'all' ? ' · all branches' : ` · ${branchName_(scope)}`}
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <Pressable onPress={() => setCatalogOpen(true)}>
-                  <Text style={[styles.link, { color: colors.brand }]}>＋ Catalog</Text>
-                </Pressable>
-                <Pressable onPress={() => setEditMaterial('new')}>
-                  <Text style={[styles.link, { color: colors.brand }]}>＋ Material</Text>
-                </Pressable>
-              </View>
-            </View>
-            {data.materials.length > 0 ? (
-              <View style={styles.catRow}>
-                <Chip label="All" on={categoryFilter === 'all'} onPress={() => setCategoryFilter('all')} />
+
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>
+              Raw materials · {scope === 'all' ? 'all branches' : branchName_(scope)}
+            </Text>
+            {rawMaterials.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catRow}>
+                <Chip label="✨ All" on={categoryFilter === 'all'} onPress={() => setCategoryFilter('all')} />
                 {categories.map((c) => (
-                  <Chip key={c} label={c} on={categoryFilter === c} onPress={() => setCategoryFilter(c)} />
+                  <Chip
+                    key={c}
+                    label={`${CATEGORY_ICON[c] ?? '🏷️'} ${c}`}
+                    on={categoryFilter === c}
+                    onPress={() => setCategoryFilter(c)}
+                  />
                 ))}
-              </View>
+              </ScrollView>
             ) : null}
-            {data.materials.length === 0 ? (
-              <Empty text="No materials yet. Tap ＋ Catalog to add the standard burger / fast-food list, or ＋ Material for one item." />
+            {rawMaterials.length === 0 ? (
+              <Empty text="No raw materials yet. Tap Catalog for the burger list, or Add raw for one item." />
             ) : null}
             {visibleMaterials.map((m) => {
               const q = stock[m.id] ?? 0;
               const isLow = m.reorderLevel > 0 && q <= m.reorderLevel;
               return (
-                <Pressable key={m.id} onPress={() => setEditMaterial(m)} style={[styles.row, { backgroundColor: colors.white, borderColor: isLow ? colors.expenseText : colors.hairline }]}>
+                <Pressable
+                  key={m.id}
+                  onPress={() => setEditMaterial(m)}
+                  style={[styles.dashCard, { backgroundColor: colors.white, borderColor: isLow ? colors.expenseText : colors.hairline }]}
+                >
+                  <View style={[styles.dashCardAccent, { backgroundColor: isLow ? colors.expenseText : colors.brand }]} />
                   <View style={styles.flex}>
                     <Text style={[styles.rowTitle, { color: colors.ink }]} numberOfLines={1}>
                       {m.name}
-                      {m.inputs?.length ? <Text style={{ color: colors.brand }}>  · prepared</Text> : null}
                     </Text>
                     <Text style={[styles.rowSub, { color: colors.muted }]}>
                       {m.category ? `${m.category} · ` : ''}
@@ -240,35 +296,82 @@ export function KitchenScreen() {
           </>
         ) : null}
 
-        {tab === 'menu' ? (
+        {tab === 'recipes' ? (
           <>
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Summary</Text>
+            <View style={styles.statGrid}>
+              <DashStat icon="🧾" label="RECIPES" value={String(recipeCount)} color="#2563EB" sub="Food formulas saved" />
+              <DashStat icon="👨‍🍳" label="KITCHEN READY" value={String(Math.round(readyTotal))} color="#0D9488" sub="Produced, not transferred" />
+              <DashStat icon="🍔" label="MENU FOODS" value={String(menuFoodCount)} color="#7C3AED" sub="Products · Menu / Food" />
+            </View>
+
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Quick links</Text>
+            <View style={styles.quickGrid}>
+              {RECIPE_ACTIONS.map((a) => (
+                <QuickLink key={a.kind} icon={a.icon} label={a.label} onPress={() => openMove(a.kind)} />
+              ))}
+            </View>
+
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Food recipes</Text>
             <Text style={[styles.hint, { color: colors.muted }]}>
-              Tap a menu item to set its recipe. Each sale of it then takes those materials out of stock at the branch that sold it.
+              Only Kitchen food from Products. Tap → set recipe → Produce → To Foods.
             </Text>
-            {books.products.length === 0 ? <Empty text="No menu items yet. Add your burgers in Products first." /> : null}
-            {books.products.map((p) => {
+            {foodProducts.length === 0 ? (
+              <Empty text="No kitchen food yet. In Products choose Kitchen food (not Simple sell), add Hot Dog / Burger, then open Recipes." />
+            ) : null}
+            {foodProducts.map((p) => {
               const recipe = recipeFor(p.id, data.recipes);
+              const ready = readyMaterialFor(p.id, data.materials);
+              const readyQty = ready ? stock[ready.id] ?? 0 : 0;
               const c = recipe ? itemCosting(p.sellingPrice, recipe.lines, data) : null;
               return (
-                <Pressable key={p.id} onPress={() => setRecipeProduct(p)} style={[styles.row, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
-                  <View style={styles.flex}>
-                    <Text style={[styles.rowTitle, { color: colors.ink }]} numberOfLines={1}>{p.name}</Text>
-                    <Text style={[styles.rowSub, { color: colors.muted }]}>
-                      Sells {formatRs(p.sellingPrice)}
-                      {recipe ? ` · ${recipe.lines.length} material${recipe.lines.length === 1 ? '' : 's'}` : ''}
-                    </Text>
-                  </View>
-                  {c ? (
-                    <View style={styles.right}>
-                      <Text style={[styles.rowValue, { color: colors.ink }]}>Cost {formatRs(c.cost)}</Text>
-                      <Text style={[styles.rowSub, { color: c.margin >= 0 ? colors.saleText : colors.expenseText }]}>
-                        Margin {formatRs(c.margin)} · {c.marginPercent}%
-                      </Text>
+                <View key={p.id} style={[styles.dashCard, { backgroundColor: colors.white, borderColor: colors.hairline, flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingLeft: 14 }]}>
+                  <View style={[styles.dashCardAccent, { backgroundColor: colors.brand }]} />
+                  <Pressable onPress={() => setRecipeProduct(p)} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={[styles.quickIconWrap, { marginRight: 10 }]}>
+                      <Text style={{ fontSize: 24 }}>🍔</Text>
                     </View>
-                  ) : (
-                    <Text style={[styles.link, { color: colors.brand }]}>＋ Recipe</Text>
-                  )}
-                </Pressable>
+                    <View style={styles.flex}>
+                      <Text style={[styles.rowTitle, { color: colors.ink }]} numberOfLines={1}>{p.name}</Text>
+                      <Text style={[styles.rowSub, { color: colors.muted }]}>
+                        Kitchen food · Sells {formatRs(p.sellingPrice)}
+                        {recipe ? ` · ${recipe.lines.length} ingredients` : ' · tap to add recipe'}
+                        {` · stock ${p.stock}`}
+                      </Text>
+                      {ready ? (
+                        <Text style={[styles.rowSub, { color: colors.brand }]}>
+                          Kitchen ready {formatQty(readyQty, ready.unit)}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {c ? (
+                      <View style={styles.right}>
+                        <Text style={[styles.rowValue, { color: colors.ink }]}>Cost {formatRs(c.cost)}</Text>
+                        <Text style={[styles.rowSub, { color: c.margin >= 0 ? colors.saleText : colors.expenseText }]}>
+                          {c.marginPercent}%
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.link, { color: colors.brand }]}>＋ Recipe</Text>
+                    )}
+                  </Pressable>
+                  {recipe ? (
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <Pressable
+                        onPress={() => openMove('produce', p.id)}
+                        style={[styles.miniBtn, { borderColor: colors.brand, backgroundColor: '#E8F1FF' }]}
+                      >
+                        <Text style={[styles.miniBtnText, { color: colors.brand }]}>👨‍🍳 Produce</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => openMove('toFoods', p.id)}
+                        style={[styles.miniBtn, { borderColor: colors.brand, backgroundColor: '#E8F1FF', opacity: readyQty > 0 ? 1 : 0.45 }]}
+                      >
+                        <Text style={[styles.miniBtnText, { color: colors.brand }]}>🏪 To Foods</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                </View>
               );
             })}
           </>
@@ -276,6 +379,7 @@ export function KitchenScreen() {
 
         {tab === 'moves' ? (
           <>
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Stock movements</Text>
             {data.moves.filter((m) => scope === 'all' || m.branchId === scope).length === 0 ? <Empty text="No stock movements yet." /> : null}
             {data.moves
               .filter((m) => scope === 'all' || m.branchId === scope)
@@ -306,12 +410,33 @@ export function KitchenScreen() {
           </>
         ) : null}
 
-        {tab === 'suppliers' ? <SuppliersTab onAdd={() => setSupplierSheet('new')} onOpen={(s) => setSupplierSheet(s)} /> : null}
+        {tab === 'suppliers' ? (
+          <>
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Payables</Text>
+            <View style={styles.quickGrid}>
+              <QuickLink icon="➕" label="Add supplier" onPress={() => setSupplierSheet('new')} />
+            </View>
+            <SuppliersTab onAdd={() => setSupplierSheet('new')} onOpen={(s) => setSupplierSheet(s)} />
+          </>
+        ) : null}
 
-        {tab === 'reports' ? <Reports period={period} setPeriod={setPeriod} onToast={toast.show} /> : null}
+        {tab === 'reports' ? (
+          <>
+            <Text style={[styles.dashHeading, { color: colors.brand }]}>Reports</Text>
+            <Reports period={period} setPeriod={setPeriod} onToast={toast.show} />
+          </>
+        ) : null}
       </ScrollView>
 
-      <MoveForm kind={move} onClose={() => setMove(null)} onDone={done} />
+      <MoveForm
+        kind={move}
+        prefillProductId={moveProductId}
+        onClose={() => {
+          setMove(null);
+          setMoveProductId(null);
+        }}
+        onDone={done}
+      />
       <MaterialForm
         visible={editMaterial !== null}
         material={editMaterial === 'new' ? null : editMaterial}
@@ -336,21 +461,55 @@ export function KitchenScreen() {
   );
 }
 
-function Tile({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  const { colors } = useTheme();
+function DashStat({
+  icon,
+  label,
+  value,
+  color,
+  sub,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  color: string;
+  sub: string;
+}) {
   return (
-    <View style={[kitchenStyles.tile, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
-      <Text style={[kitchenStyles.tileLabel, { color: colors.muted }]}>{label}</Text>
-      <Text style={[kitchenStyles.tileValue, { color: tone ?? colors.ink }]} numberOfLines={1} adjustsFontSizeToFit>
+    <View style={[styles.statCard, { backgroundColor: color }]}>
+      <Text style={styles.statIcon}>{icon}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
         {value}
+      </Text>
+      <Text style={styles.statSub} numberOfLines={1}>
+        {sub}
       </Text>
     </View>
   );
 }
 
+function QuickLink({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable onPress={onPress} style={[styles.quickCard, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+      <View style={styles.quickTopBar} />
+      <View style={styles.quickIconWrap}>
+        <Text style={styles.quickIcon}>{icon}</Text>
+      </View>
+      <Text style={[styles.quickLabel, { color: colors.ink }]} numberOfLines={2}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function Empty({ text }: { text: string }) {
   const { colors } = useTheme();
-  return <Text style={[styles.empty, { color: colors.muted }]}>{text}</Text>;
+  return (
+    <View style={[styles.emptyCard, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+      <Text style={[styles.empty, { color: colors.muted }]}>{text}</Text>
+    </View>
+  );
 }
 
 function MoveRow({ move, materials, branch, other, onDelete }: {
@@ -409,15 +568,9 @@ function SuppliersTab({ onAdd, onOpen }: { onAdd: () => void; onOpen: (s: Suppli
   const owed = books.suppliers.reduce((sum, s) => sum + (s.payable || 0), 0);
   return (
     <>
-      <View style={kitchenStyles.row}>
-        <Tile label="SUPPLIERS" value={String(books.suppliers.length)} />
-        <Tile label="TOTAL OWED" value={formatRs(owed)} tone={owed ? colors.expenseText : undefined} />
-      </View>
-      <View style={styles.sectionRow}>
-        <Text style={[styles.section, { color: colors.ink }]}>Supplier payables</Text>
-        <Pressable onPress={onAdd}>
-          <Text style={[styles.link, { color: colors.brand }]}>＋ Supplier</Text>
-        </Pressable>
+      <View style={styles.statGrid}>
+        <DashStat icon="🤝" label="SUPPLIERS" value={String(books.suppliers.length)} color="#2563EB" sub="On your books" />
+        <DashStat icon="💸" label="TOTAL OWED" value={formatRs(owed)} color="#EF4444" sub={owed ? 'Payables open' : 'All settled'} />
       </View>
       <Text style={[styles.hint, { color: colors.muted }]}>
         Mark a kitchen purchase as “on credit” to add here. Tap a supplier to record a payment.
@@ -427,7 +580,8 @@ function SuppliersTab({ onAdd, onOpen }: { onAdd: () => void; onOpen: (s: Suppli
         .slice()
         .sort((a, b) => b.payable - a.payable || b.createdAt - a.createdAt)
         .map((s) => (
-          <Pressable key={s.id} onPress={() => onOpen(s)} style={[styles.row, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+          <Pressable key={s.id} onPress={() => onOpen(s)} style={[styles.dashCard, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
+            <View style={[styles.dashCardAccent, { backgroundColor: s.payable > 0 ? colors.expenseText : colors.brand }]} />
             <View style={styles.flex}>
               <Text style={[styles.rowTitle, { color: colors.ink }]} numberOfLines={1}>{s.name}</Text>
               <Text style={[styles.rowSub, { color: colors.muted }]}>{s.phone ? s.phone : 'No phone'}</Text>
@@ -677,32 +831,111 @@ function Reports({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   top: { paddingHorizontal: 16, gap: 10, paddingBottom: 8 },
-  body: { padding: 16, gap: 10, paddingBottom: 40 },
-  tabs: { flexDirection: 'row', borderRadius: 12, padding: 3 },
-  tab: { flex: 1, minHeight: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  body: { padding: 16, gap: 12, paddingBottom: 48 },
+  tabs: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    padding: 4,
+    gap: 2,
+    borderWidth: 1,
+  },
+  tab: {
+    flex: 1,
+    minHeight: 64,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 8,
+  },
+  tabIcon: { fontSize: 22, lineHeight: 26 },
   tabText: { fontFamily: fonts.semibold, fontSize: 12 },
   hero: { borderRadius: 20, padding: 20, alignItems: 'center', gap: 6 },
-  heroIcon: { fontSize: 44 },
-  heroTitle: { fontFamily: fonts.bold, fontSize: 22 },
-  heroText: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  action: { width: '31%', flexGrow: 1, minHeight: 72, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  actionIcon: { fontSize: 22 },
-  actionText: { fontFamily: fonts.semibold, fontSize: 12 },
-  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, gap: 8 },
-  catRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  section: { fontFamily: fonts.bold, fontSize: 15, flexShrink: 1 },
-  link: { fontFamily: fonts.semibold, fontSize: 13 },
-  hint: { fontFamily: fonts.regular, fontSize: 12, lineHeight: 17 },
-  empty: { fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: 18 },
+  heroIcon: { fontSize: 48 },
+  heroTitle: { fontFamily: fonts.bold, fontSize: 24 },
+  heroText: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  dashHeading: {
+    fontFamily: fonts.bold,
+    fontSize: 17,
+    marginTop: 4,
+    letterSpacing: 0.2,
+  },
+  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  statCard: {
+    width: '31%',
+    flexGrow: 1,
+    minWidth: 100,
+    borderRadius: 16,
+    padding: 14,
+    gap: 4,
+    minHeight: 118,
+    overflow: 'hidden',
+  },
+  statIcon: { fontSize: 22, opacity: 0.95, alignSelf: 'flex-end' },
+  statLabel: { fontFamily: fonts.semibold, fontSize: 11, color: 'rgba(255,255,255,0.85)', letterSpacing: 0.4 },
+  statValue: { fontFamily: fonts.bold, fontSize: 20, color: '#FFFFFF' },
+  statSub: { fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  quickCard: {
+    width: '30%',
+    flexGrow: 1,
+    minWidth: 96,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    paddingTop: 0,
+    paddingBottom: 14,
+    paddingHorizontal: 8,
+    gap: 8,
+    overflow: 'hidden',
+  },
+  quickTopBar: { alignSelf: 'stretch', height: 3, backgroundColor: '#1D5FE0', marginBottom: 10 },
+  quickIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#E8F1FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickIcon: { fontSize: 26 },
+  quickLabel: { fontFamily: fonts.semibold, fontSize: 13, textAlign: 'center' },
+  dashCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    paddingLeft: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  dashCardAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+  },
+  catRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: 6, paddingVertical: 2 },
+  section: { fontFamily: fonts.bold, fontSize: 16, flexShrink: 1 },
+  link: { fontFamily: fonts.semibold, fontSize: 14 },
+  hint: { fontFamily: fonts.regular, fontSize: 13, lineHeight: 18 },
+  emptyCard: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12 },
+  empty: { fontFamily: fonts.regular, fontSize: 14, textAlign: 'center', paddingVertical: 18 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 14, padding: 12 },
-  rowTitle: { fontFamily: fonts.semibold, fontSize: 14 },
-  rowSub: { fontFamily: fonts.regular, fontSize: 12 },
-  rowValue: { fontFamily: fonts.bold, fontSize: 14 },
+  rowTitle: { fontFamily: fonts.semibold, fontSize: 15 },
+  rowSub: { fontFamily: fonts.regular, fontSize: 13 },
+  rowValue: { fontFamily: fonts.bold, fontSize: 15 },
   right: { alignItems: 'flex-end', gap: 2 },
-  badge: { fontFamily: fonts.bold, fontSize: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
+  miniBtn: { flex: 1, borderWidth: 1.5, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  miniBtnText: { fontFamily: fonts.semibold, fontSize: 14 },
+  badge: { fontFamily: fonts.bold, fontSize: 11, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
   alertBanner: { borderWidth: 1, borderRadius: 14, padding: 12, gap: 2 },
-  alertTitle: { fontFamily: fonts.bold, fontSize: 13 },
+  alertTitle: { fontFamily: fonts.bold, fontSize: 14 },
   toggle: { flexDirection: 'row', gap: 10, borderWidth: 1.5, borderRadius: 14, padding: 12, alignItems: 'flex-start' },
   periods: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   card: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },

@@ -233,6 +233,7 @@ export const localRepository: Repository = {
       reorderLevel: input.reorderLevel,
       batchNo: input.batchNo?.trim(),
       expiry: input.expiry?.trim(),
+      sellKind: input.sellKind === 'menu' ? 'menu' : 'simple',
       createdAt: Date.now(),
     });
     await writeBooks(uid, books);
@@ -258,6 +259,7 @@ export const localRepository: Repository = {
             reorderLevel: input.reorderLevel !== undefined ? input.reorderLevel : product.reorderLevel,
             batchNo: input.batchNo !== undefined ? input.batchNo : product.batchNo,
             expiry: input.expiry !== undefined ? input.expiry : product.expiry,
+            sellKind: input.sellKind === 'menu' ? 'menu' : input.sellKind === 'simple' ? 'simple' : product.sellKind ?? 'simple',
           }
         : product,
     );
@@ -300,6 +302,20 @@ export const localRepository: Repository = {
     const books = await readBooks(uid);
     const balances = { ...(books.meta.openingBalances ?? {}), [dayKey]: Math.round(amount) };
     books.meta = { ...books.meta, openingBalances: balances };
+    await writeBooks(uid, books);
+  },
+  async setDayClosed(uid, dayKey, closedAt) {
+    const books = await readBooks(uid);
+    const closedDays = { ...(books.meta.closedDays ?? {}) };
+    if (closedAt == null) delete closedDays[dayKey];
+    else closedDays[dayKey] = closedAt;
+    books.meta = { ...books.meta, closedDays };
+    await writeBooks(uid, books);
+  },
+  async setQuickSaleProfitPercent(uid, percent) {
+    const books = await readBooks(uid);
+    const value = Math.min(100, Math.max(0, Math.round(percent)));
+    books.meta = { ...books.meta, quickSaleProfitPercent: value };
     await writeBooks(uid, books);
   },
   async addCustomExpenseCategory(uid, name) {

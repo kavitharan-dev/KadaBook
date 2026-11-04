@@ -6,7 +6,7 @@ import { kitchenRepo, type MaterialInput, type NewMove } from '../data/kitchenRe
 import { EMPTY_KITCHEN, type BranchScope, type KitchenData, type MaterialQty } from '../data/kitchenTypes';
 import { RAW_MATERIAL_CATALOG } from '../data/rawMaterialCatalog';
 import type { SaleLine } from '../data/types';
-import { linesCost, nextAvgCost, roundMoney, roundQty, saleUsage, stockLevels, valueAt } from '../lib/kitchenOps';
+import { linesCost, nextAvgCost, readyMaterialFor, roundMoney, roundQty, saleUsage, stockLevels, valueAt } from '../lib/kitchenOps';
 
 export type PurchaseLine = { materialId: string; qty: number; unitCost: number };
 
@@ -36,7 +36,12 @@ type KitchenValue = {
     expiry?: Record<string, string>,
   ) => Promise<number>;
   transfer: (fromId: string, toId: string, lines: MaterialQty[], note?: string) => Promise<void>;
+  /** Legacy: produce into a prepared material by material id. Prefer produceFromRecipe. */
   produce: (branchId: string, outputId: string, qty: number, note?: string) => Promise<void>;
+  /** Produce using a product recipe → fills kitchen-ready stock for that product. */
+  produceFromRecipe: (branchId: string, productId: string, qty: number, note?: string) => Promise<void>;
+  /** Move kitchen-ready qty into Products / Foods stock for the cashier. */
+  transferToFoods: (branchId: string, productId: string, qty: number, note?: string) => Promise<void>;
   wastage: (branchId: string, lines: MaterialQty[], note?: string) => Promise<void>;
   stockCount: (branchId: string, counted: Record<string, number>, note?: string) => Promise<void>;
   /** Called after a bill is saved: takes the recipe materials out of the branch's stock. */
@@ -55,7 +60,8 @@ function assertLines<T extends { qty: number }>(lines: T[]): T[] {
 
 export function KitchenProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { logAudit } = useBooks();
+  const { books, updateProduct, logAudit } = useBooks();
+  // updateProduct used when a recipe is saved so the product becomes Menu / Food.
   const uid = user?.uid;
   const [data, setData] = useState<KitchenData>(EMPTY_KITCHEN);
   const [loading, setLoading] = useState(true);
@@ -173,7 +179,39 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
         const good = lines.filter((l) => l.materialId && l.qty > 0).map((l) => ({ materialId: l.materialId, qty: roundQty(l.qty) }));
         if (!good.length) throw new Error('Add at least one material to the recipe.');
         await kitchenRepo.saveRecipe(need(), productId, good);
-        logAudit('Recipe saved', `${productId}: ${describe(Object.fromEntries(good.map((l) => [l.materialId, l.qty])))}`);
+        const product = books.products.find((p) => p.id === productId);
+        const readyName = `${(product?.name ?? 'Item').trim().slice(0, 50)} (ready)`;
+        const existing = readyMaterialFor(productId, data.materials);
+        await kitchenRepo.saveMaterial(need(), existing?.id ?? null, {
+          name: readyName,
+          unit: 'pcs',
+          avgCost: existing?.avgCost ?? 0,
+          reorderLevel: existing?.reorderLevel ?? 0,
+          category: 'Prepared / Ready',
+          productId,
+          inputs: good,
+        });
+        // Mark product as Menu / Food so Recipes + cashier treat it as kitchen food.
+        if (product && product.sellKind !== 'menu') {
+          try {
+            await updateProduct(productId, {
+              name: product.name,
+              sellingPrice: product.sellingPrice,
+              purchasePrice: product.purchasePrice,
+              stock: product.stock,
+              unit: product.unit || 'pcs',
+              category: product.category || 'Food',
+              barcode: product.barcode,
+              reorderLevel: product.reorderLevel,
+              batchNo: product.batchNo,
+              expiry: product.expiry,
+              sellKind: 'menu',
+            });
+          } catch {
+            /* recipe already saved; sellKind update is best-effort */
+          }
+        }
+        logAudit('Recipe saved', `${readyName}: ${describe(Object.fromEntries(good.map((l) => [l.materialId, l.qty])))}`);
       },
       async deleteRecipe(productId) {
         await kitchenRepo.deleteRecipe(need(), productId);
@@ -251,9 +289,9 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
         const used: Record<string, number> = {};
         for (const part of output.inputs) {
           const m = material(part.materialId);
-          const need = roundQty(part.qty * qty);
-          if (need > (here[m.id] ?? 0) + 1e-9) throw new Error(`Not enough ${m.name}: need ${need} ${m.unit}, have ${roundQty(here[m.id] ?? 0)}.`);
-          used[m.id] = -need;
+          const needQty = roundQty(part.qty * qty);
+          if (needQty > (here[m.id] ?? 0) + 1e-9) throw new Error(`Not enough ${m.name}: need ${needQty} ${m.unit}, have ${roundQty(here[m.id] ?? 0)}.`);
+          used[m.id] = -needQty;
         }
         const usedCost = valueAt(used, data.materials);
         const totalCost = -Object.values(usedCost).reduce((a, b) => a + b, 0);
@@ -267,6 +305,118 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
           ],
           { [outputId]: nextAvgCost(output, stockAll[outputId] ?? 0, qty, unitCost) },
         );
+      },
+
+      async produceFromRecipe(branchId, productId, qty, note) {
+        const recipe = data.recipes.find((r) => r.productId === productId);
+        if (!recipe?.lines.length) throw new Error('Save a recipe for this food first.');
+        let ready = readyMaterialFor(productId, data.materials);
+        if (!ready?.inputs?.length) {
+          const product = books.products.find((p) => p.id === productId);
+          const readyName = `${(product?.name ?? 'Item').trim().slice(0, 50)} (ready)`;
+          const readyId = await kitchenRepo.saveMaterial(need(), ready?.id ?? null, {
+            name: readyName,
+            unit: 'pcs',
+            avgCost: ready?.avgCost ?? 0,
+            reorderLevel: ready?.reorderLevel ?? 0,
+            category: 'Prepared / Ready',
+            productId,
+            inputs: recipe.lines,
+          });
+          ready = {
+            id: readyId,
+            name: readyName,
+            unit: 'pcs',
+            avgCost: ready?.avgCost ?? 0,
+            reorderLevel: 0,
+            category: 'Prepared / Ready',
+            productId,
+            inputs: recipe.lines,
+            createdAt: Date.now(),
+          };
+        } else if (JSON.stringify(ready.inputs) !== JSON.stringify(recipe.lines)) {
+          await kitchenRepo.saveMaterial(need(), ready.id, {
+            name: ready.name,
+            unit: ready.unit,
+            avgCost: ready.avgCost,
+            reorderLevel: ready.reorderLevel,
+            category: ready.category,
+            productId,
+            inputs: recipe.lines,
+          });
+          ready = { ...ready, inputs: recipe.lines };
+        }
+        await (async () => {
+          if (!Number.isFinite(qty) || qty <= 0) throw new Error('Enter how many were made.');
+          const output = ready!;
+          const here = stockLevels(data, branchId);
+          const used: Record<string, number> = {};
+          for (const part of output.inputs!) {
+            const m = material(part.materialId);
+            const needQty = roundQty(part.qty * qty);
+            if (needQty > (here[m.id] ?? 0) + 1e-9) {
+              throw new Error(`Not enough ${m.name}: need ${needQty} ${m.unit}, have ${roundQty(here[m.id] ?? 0)}.`);
+            }
+            used[m.id] = -needQty;
+          }
+          const usedCost = valueAt(used, data.materials);
+          const totalCost = -Object.values(usedCost).reduce((a, b) => a + b, 0);
+          const unitCost = totalCost / qty;
+          const refId = `pr_${Date.now().toString(36)}`;
+          await kitchenRepo.addMoves(
+            need(),
+            [
+              { type: 'productionOut', branchId, refId, qty: used, cost: usedCost, note: note?.trim() || undefined },
+              {
+                type: 'productionIn',
+                branchId,
+                refId,
+                qty: { [output.id]: roundQty(qty) },
+                cost: { [output.id]: roundMoney(totalCost) },
+                note: note?.trim() || undefined,
+              },
+            ],
+            { [output.id]: nextAvgCost(output, stockAll[output.id] ?? 0, qty, unitCost) },
+          );
+        })();
+        logAudit('Produced', `${qty} × ${ready.name}`);
+      },
+
+      async transferToFoods(branchId, productId, qty, note) {
+        if (!Number.isFinite(qty) || qty <= 0) throw new Error('Enter how many to send to Foods.');
+        const product = books.products.find((p) => p.id === productId);
+        if (!product) throw new Error('Add this food in Products first.');
+        const ready = readyMaterialFor(productId, data.materials);
+        if (!ready) throw new Error('Save a recipe and Produce first.');
+        const here = stockLevels(data, branchId);
+        const left = here[ready.id] ?? 0;
+        if (qty > left + 1e-9) {
+          throw new Error(`Only ${roundQty(left)} ${ready.unit} ready in kitchen. Produce more first.`);
+        }
+        const neg = { [ready.id]: -roundQty(qty) };
+        await kitchenRepo.addMoves(need(), [
+          {
+            type: 'counterOut',
+            branchId,
+            qty: neg,
+            cost: valueAt(neg, data.materials),
+            note: note?.trim() || `To Foods · ${product.name}`,
+          },
+        ]);
+        await updateProduct(productId, {
+          name: product.name,
+          sellingPrice: product.sellingPrice,
+          purchasePrice: ready.avgCost > 0 ? ready.avgCost : product.purchasePrice,
+          stock: roundQty(product.stock + qty),
+          unit: product.unit || 'pcs',
+          category: product.category || 'Food',
+          barcode: product.barcode,
+          reorderLevel: product.reorderLevel,
+          batchNo: product.batchNo,
+          expiry: product.expiry,
+          sellKind: 'menu',
+        });
+        logAudit('To Foods', `${qty} × ${product.name} → cashier stock`);
       },
 
       async wastage(branchId, lines, note) {
@@ -294,7 +444,14 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
 
       async recordSale(items, at = Date.now()) {
         if (!uid || !activeBranchId) return;
-        const usage = saleUsage(items, data.recipes);
+        // Produce → To Foods already took materials; only deduct recipe on sale for
+        // menu items that were never set up with kitchen-ready stock.
+        const madeToOrder = items.filter((line) => {
+          if (!line.productId) return false;
+          return !readyMaterialFor(line.productId, data.materials);
+        });
+        if (!madeToOrder.length) return;
+        const usage = saleUsage(madeToOrder, data.recipes);
         if (!Object.keys(usage).length) return;
         const qty = Object.fromEntries(Object.entries(usage).map(([k, v]) => [k, -v]));
         await kitchenRepo.addSaleUsage(uid, activeBranchId, at, qty, valueAt(qty, data.materials));
@@ -307,7 +464,7 @@ export function KitchenProvider({ children }: { children: ReactNode }) {
         logAudit('Stock entry deleted', move ? `${move.type} at ${branchName(move.branchId)}: ${describe(move.qty)}` : id);
       },
     };
-  }, [uid, data, loading, error, scope, setScope, logAudit]);
+  }, [uid, data, loading, error, scope, setScope, logAudit, books.products, updateProduct]);
 
   return <KitchenContext.Provider value={value}>{children}</KitchenContext.Provider>;
 }

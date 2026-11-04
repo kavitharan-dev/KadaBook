@@ -9,6 +9,8 @@ type OpeningBalanceModalProps = {
   value: string;
   onChangeValue: (text: string) => void;
   busy: boolean;
+  /** Owner changing a saved balance: secondary button cancels instead of starting at 0. */
+  editing?: boolean;
   onSkip: () => void;
   onSave: () => void;
 };
@@ -18,6 +20,7 @@ export function OpeningBalanceModal({
   value,
   onChangeValue,
   busy,
+  editing = false,
   onSkip,
   onSave,
 }: OpeningBalanceModalProps) {
@@ -28,11 +31,20 @@ export function OpeningBalanceModal({
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.backdrop}>
         <View style={[styles.card, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
-          <Text style={[styles.title, { color: colors.ink }]}>{t((m) => m.sale.openingTitle)}</Text>
-          <Text style={[styles.hint, { color: colors.muted }]}>{t((m) => m.sale.openingHint)}</Text>
+          <Text style={[styles.title, { color: colors.ink }]}>
+            {t((m) => (editing ? m.sale.openingEditTitle : m.sale.openingTitle))}
+          </Text>
+          <Text style={[styles.hint, { color: colors.muted }]}>
+            {t((m) => (editing ? m.sale.openingEditHint : m.sale.openingHint))}
+          </Text>
           <Field value={value} onChangeText={onChangeValue} placeholder="0" keyboardType="number-pad" />
           <View style={styles.actions}>
-            <FillButton label={t((m) => m.sale.openingSkip)} onPress={onSkip} busy={busy} color={colors.line} />
+            <FillButton
+              label={t((m) => (editing ? m.common.cancel : m.sale.openingSkip))}
+              onPress={onSkip}
+              busy={busy}
+              color={colors.line}
+            />
             <FillButton label={t((m) => m.sale.openingSave)} onPress={onSave} busy={busy} color={colors.saleText} />
           </View>
         </View>

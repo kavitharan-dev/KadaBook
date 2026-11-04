@@ -5,6 +5,7 @@ import { FillButton, Screen } from '../components/ui';
 import { useI18n } from '../context/LocaleContext';
 import { useShopGate } from '../context/ShopGateContext';
 import { useTheme } from '../context/ThemeContext';
+import { useRole } from '../lib/roles';
 import { fonts } from '../theme/fonts';
 
 function GateShell({
@@ -97,14 +98,20 @@ export function TrialChip() {
 export function ExpiredRenewBar() {
   const { t } = useI18n();
   const { status, openRenewWhatsApp } = useShopGate();
+  const { role } = useRole();
   const { colors } = useTheme();
   if (status !== 'expired') return null;
+  const isOwner = role === 'owner';
   return (
     <LinearGradient colors={['#1D5FE0', '#3B82F6']} style={styles.renewBar}>
-      <Text style={styles.renewText}>{t((m) => m.gate.expiredReadOnly)}</Text>
-      <Pressable onPress={openRenewWhatsApp} style={styles.renewBtn}>
-        <Text style={styles.renewBtnText}>{t((m) => m.gate.renewWhatsApp)}</Text>
-      </Pressable>
+      <Text style={styles.renewText}>
+        {isOwner ? t((m) => m.gate.expiredReadOnly) : 'Shop plan expired. Ask the owner to renew.'}
+      </Text>
+      {isOwner ? (
+        <Pressable onPress={openRenewWhatsApp} style={styles.renewBtn}>
+          <Text style={styles.renewBtnText}>{t((m) => m.gate.renewWhatsApp)}</Text>
+        </Pressable>
+      ) : null}
     </LinearGradient>
   );
 }

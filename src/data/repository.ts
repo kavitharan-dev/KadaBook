@@ -34,6 +34,9 @@ export type Repository = {
   updateShopName(uid: string, shopName: string): Promise<void>;
   updateShopType(uid: string, shopType: 'retail' | 'kitchen'): Promise<void>;
   setOpeningBalance(uid: string, dayKey: string, amount: number): Promise<void>;
+  /** Soft day close. Pass null closedAt to resume (clear the mark). */
+  setDayClosed(uid: string, dayKey: string, closedAt: number | null): Promise<void>;
+  setQuickSaleProfitPercent(uid: string, percent: number): Promise<void>;
   addCustomExpenseCategory(uid: string, name: string): Promise<string>;
   updateSale(uid: string, id: string, patch: { note?: string; customerName?: string; customerPhone?: string; paymentMode?: SaleExtras['paymentMode']; editedAt?: number; createdAt?: number }): Promise<void>;
   addCustomer(uid: string, input: { name: string; phone: string; note?: string }): Promise<string>;

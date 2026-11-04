@@ -5,10 +5,10 @@ import { itemCosting, useKitchen } from '../../context/KitchenContext';
 import { useTheme } from '../../context/ThemeContext';
 import { MATERIAL_UNITS, type MaterialUnit, type RawMaterial } from '../../data/kitchenTypes';
 import type { Product } from '../../data/types';
-import { formatQty, linesCost, stockLevels } from '../../lib/kitchenOps';
+import { formatQty, readyMaterialFor, recipeFor, stockLevels } from '../../lib/kitchenOps';
 import { formatRs } from '../../lib/format';
 import { fonts } from '../../theme/fonts';
-import { BranchChips, Chip, Input, Label, LinesEditor, MaterialSelect, Sheet, newLine, parsedLines, type EditLine } from './KitchenUi';
+import { BranchChips, Chip, Input, Label, LinesEditor, Sheet, newLine, parsedLines, type EditLine } from './KitchenUi';
 
 const toLines = (rows?: { materialId: string; qty: number }[]): EditLine[] =>
   rows?.length ? rows.map((r) => ({ ...newLine(), materialId: r.materialId, qty: String(r.qty) })) : [newLine()];
@@ -30,10 +30,9 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
   const [category, setCategory] = useState('');
   const [cost, setCost] = useState('');
   const [reorder, setReorder] = useState('');
-  const [prepared, setPrepared] = useState(false);
-  const [inputs, setInputs] = useState<EditLine[]>([newLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isReadyLinked = !!material?.productId;
 
   useEffect(() => {
     if (!visible) return;
@@ -42,26 +41,21 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
     setCategory(material?.category ?? '');
     setCost(material ? String(material.avgCost) : '');
     setReorder(material ? String(material.reorderLevel) : '');
-    setPrepared(!!material?.inputs?.length);
-    setInputs(toLines(material?.inputs));
     setError(null);
   }, [visible, material]);
-
-  const others = data.materials.filter((m) => m.id !== material?.id);
-  const inputRows = parsedLines(inputs).map(({ materialId, qty }) => ({ materialId, qty }));
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      if (prepared && !inputRows.length) throw new Error('Add what one unit is made from, or turn off "Prepared item".');
+      if (isReadyLinked) throw new Error('Edit this food’s recipe under Recipes — not here.');
       await saveMaterial(material?.id ?? null, {
         name,
         unit,
         avgCost: Number(cost) || 0,
         reorderLevel: Number(reorder) || 0,
         category: category.trim() || undefined,
-        inputs: prepared ? inputRows : [],
+        inputs: [],
       });
       onDone(material ? `${name.trim()} updated` : `${name.trim()} added`);
     } catch (caught) {
@@ -84,57 +78,44 @@ export function MaterialForm({ material, visible, onClose, onDone }: {
   return (
     <Sheet
       visible={visible}
-      title={material ? 'Edit material' : 'New raw material'}
-      subtitle="Buns, patties, cheese, sauces, vegetables, packaging…"
+      title={material ? 'Edit raw material' : 'New raw material'}
+      subtitle="Buy items only — buns, patties, cheese, sauces… Food recipes are under Recipes."
       onClose={onClose}
       actionLabel="Save material"
       onAction={save}
       busy={busy}
       error={error}
+      actionDisabled={isReadyLinked}
     >
       <Label>NAME</Label>
-      <Input value={name} onChangeText={(v) => setName(v.slice(0, 60))} placeholder="e.g. Burger bun" />
+      <Input value={name} onChangeText={(v) => setName(v.slice(0, 60))} placeholder="e.g. Burger bun" editable={!isReadyLinked} />
       <Label>CATEGORY (OPTIONAL)</Label>
-      <Input value={category} onChangeText={(v) => setCategory(v.slice(0, 40))} placeholder="e.g. Meat & Protein" />
+      <Input value={category} onChangeText={(v) => setCategory(v.slice(0, 40))} placeholder="e.g. Meat & Protein" editable={!isReadyLinked} />
       <Label>UNIT</Label>
       <View style={styles.wrap}>
         {MATERIAL_UNITS.map((u) => (
-          <Chip key={u} label={u} on={unit === u} onPress={() => setUnit(u)} />
+          <Chip key={u} label={u} on={unit === u} onPress={() => !isReadyLinked && setUnit(u)} />
         ))}
       </View>
       <View style={styles.row}>
         <View style={styles.flex}>
           <Label>{`COST PER ${unit.toUpperCase()} (RS)`}</Label>
-          <Input value={cost} onChangeText={(v) => setCost(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" placeholder="0" />
+          <Input value={cost} onChangeText={(v) => setCost(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" placeholder="0" editable={!isReadyLinked} />
         </View>
         <View style={styles.flex}>
           <Label>REORDER BELOW</Label>
-          <Input value={reorder} onChangeText={(v) => setReorder(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" placeholder="0" />
+          <Input value={reorder} onChangeText={(v) => setReorder(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" placeholder="0" editable={!isReadyLinked} />
         </View>
       </View>
       <Text style={[styles.hint, { color: colors.muted }]}>
-        The cost becomes a weighted average automatically after each purchase.
+        Enter price when you Purchase. Average cost updates after each buy.
       </Text>
-
-      <Pressable onPress={() => setPrepared((v) => !v)} style={[styles.toggle, { borderColor: prepared ? colors.brand : colors.line }]}>
-        <Text style={[styles.toggleBox, { color: colors.brand }]}>{prepared ? '☑' : '☐'}</Text>
-        <View style={styles.flex}>
-          <Text style={[styles.toggleTitle, { color: colors.ink }]}>Prepared item</Text>
-          <Text style={[styles.hint, { color: colors.muted }]}>
-            Made in the kitchen from other materials (e.g. "Burger (ready)", "Sauce mix"). Use Produce to make it.
-          </Text>
-        </View>
-      </Pressable>
-      {prepared ? (
-        <>
-          <Label>{`ONE ${unit.toUpperCase()} IS MADE FROM`}</Label>
-          <LinesEditor lines={inputs} onChange={setInputs} materials={others} />
-          <Text style={[styles.hint, { color: colors.ink }]}>
-            Cost to make one: {formatRs(linesCost(inputRows, data.materials))}
-          </Text>
-        </>
+      {isReadyLinked ? (
+        <Text style={[styles.hint, { color: colors.brand }]}>
+          This is kitchen-ready stock for a food item. Change the formula under Recipes.
+        </Text>
       ) : null}
-      {material ? (
+      {material && !isReadyLinked ? (
         <Pressable onPress={remove} style={styles.danger}>
           <Text style={[styles.dangerText, { color: colors.expenseText }]}>Delete material</Text>
         </Pressable>
@@ -195,7 +176,7 @@ export function RecipeForm({ product, visible, onClose, onDone }: {
       busy={busy}
       error={error}
     >
-      <LinesEditor lines={lines} onChange={setLines} materials={data.materials} />
+      <LinesEditor lines={lines} onChange={setLines} materials={data.materials.filter((m) => !m.productId)} />
       <View style={[styles.costCard, { backgroundColor: colors.gradientTop }]}>
         <CostRow label="Selling price" value={formatRs(product.sellingPrice)} />
         <CostRow label="Material cost" value={formatRs(costing.cost)} />
@@ -212,6 +193,9 @@ export function RecipeForm({ product, visible, onClose, onDone }: {
           tone={costing.margin >= 0 ? colors.saleText : colors.expenseText}
         />
       </View>
+      <Text style={[styles.hint, { color: colors.muted }]}>
+        After save: Produce this food, then Transfer to Foods so it appears for the cashier.
+      </Text>
       {existing ? (
         <Pressable
           onPress={async () => {
@@ -245,17 +229,29 @@ function CostRow({ label, value, strong, small, tone }: { label: string; value: 
 /* Stock movements                                                     */
 /* ------------------------------------------------------------------ */
 
-export type MoveKind = 'purchase' | 'transfer' | 'produce' | 'wastage' | 'count';
+export type MoveKind = 'purchase' | 'transfer' | 'produce' | 'toFoods' | 'wastage' | 'count';
 
 const MOVE_COPY: Record<MoveKind, { title: string; sub: string; action: string }> = {
-  purchase: { title: 'Purchase', sub: 'Raw materials bought from a supplier', action: 'Save purchase' },
-  transfer: { title: 'Transfer', sub: 'Send stock to another branch at average cost', action: 'Send stock' },
-  produce: { title: 'Produce', sub: 'Make prepared items from raw materials', action: 'Save production' },
+  purchase: { title: 'Stock in (Purchase)', sub: 'Raw materials bought — qty + price', action: 'Save purchase' },
+  transfer: { title: 'Branch transfer', sub: 'Send raw materials to another branch', action: 'Send stock' },
+  produce: { title: 'Produce', sub: 'Make food from a saved recipe (kitchen-ready)', action: 'Save production' },
+  toFoods: { title: 'Transfer to Foods', sub: 'Send kitchen-ready food to Products for the cashier', action: 'Send to Foods' },
   wastage: { title: 'Wastage', sub: 'Spoiled, dropped or expired stock', action: 'Record wastage' },
   count: { title: 'Stock count', sub: 'What is physically on the shelf now', action: 'Save count' },
 };
 
-export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onClose: () => void; onDone: (message: string) => void }) {
+export function MoveForm({
+  kind,
+  onClose,
+  onDone,
+  prefillProductId,
+}: {
+  kind: MoveKind | null;
+  onClose: () => void;
+  onDone: (message: string) => void;
+  /** When Produce / To Foods is opened from a recipe row. */
+  prefillProductId?: string | null;
+}) {
   const { colors } = useTheme();
   const k = useKitchen();
   const { books, addExpense, addSupplierPayable } = useBooks();
@@ -263,7 +259,7 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
   const [branchId, setBranchId] = useState<string>('');
   const [toId, setToId] = useState<string>('');
   const [lines, setLines] = useState<EditLine[]>([newLine()]);
-  const [outputId, setOutputId] = useState('');
+  const [productId, setProductId] = useState('');
   const [outputQty, setOutputQty] = useState('');
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [supplier, setSupplier] = useState('');
@@ -279,7 +275,7 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
     setBranchId(start);
     setToId(data.branches.find((b) => b.id !== start)?.id ?? '');
     setLines([newLine()]);
-    setOutputId('');
+    setProductId(prefillProductId ?? '');
     setOutputQty('');
     setCounts({});
     setSupplier('');
@@ -288,14 +284,21 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
     setOnCredit(false);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind]);
+  }, [kind, prefillProductId]);
 
   if (!kind) return null;
   const copy = MOVE_COPY[kind];
   const stock = stockLevels(data, branchId || 'all');
   const rows = parsedLines(lines);
-  const prepared = data.materials.filter((m) => m.inputs?.length);
-  const output = data.materials.find((m) => m.id === outputId);
+  const recipeProducts = books.products.filter((p) => recipeFor(p.id, data.recipes));
+  const readyProducts = books.products.filter((p) => {
+    const ready = readyMaterialFor(p.id, data.materials);
+    return ready && (stock[ready.id] ?? 0) > 0;
+  });
+  const selectedProduct = books.products.find((p) => p.id === productId);
+  const selectedRecipe = recipeFor(productId, data.recipes);
+  const selectedReady = readyMaterialFor(productId, data.materials);
+  const rawMaterials = data.materials.filter((m) => !m.productId);
   const purchaseTotal = rows.reduce((sum, r) => sum + r.qty * r.unitCost, 0);
 
   async function submit() {
@@ -330,9 +333,13 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
         await k.transfer(branchId, toId, rows, note);
         message = `Sent to ${data.branches.find((b) => b.id === toId)?.name ?? 'branch'}`;
       } else if (kind === 'produce') {
-        if (!outputId) throw new Error('Choose what you made.');
-        await k.produce(branchId, outputId, Number(outputQty), note);
-        message = `Made ${outputQty} ${output?.unit ?? ''} ${output?.name ?? ''}`;
+        if (!productId) throw new Error('Choose which food you made.');
+        await k.produceFromRecipe(branchId, productId, Number(outputQty), note);
+        message = `Made ${outputQty} × ${selectedProduct?.name ?? 'food'} (kitchen-ready)`;
+      } else if (kind === 'toFoods') {
+        if (!productId) throw new Error('Choose which food to send.');
+        await k.transferToFoods(branchId, productId, Number(outputQty), note);
+        message = `Sent ${outputQty} × ${selectedProduct?.name ?? 'food'} to Foods / cashier`;
       } else if (kind === 'wastage') {
         await k.wastage(branchId, rows, note);
         message = 'Wastage recorded';
@@ -364,29 +371,82 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
 
       {kind === 'produce' ? (
         <>
-          <Label>WHAT DID YOU MAKE?</Label>
-          {prepared.length === 0 ? (
+          <Label>RECIPE / FOOD</Label>
+          {recipeProducts.length === 0 ? (
             <Text style={[styles.hint, { color: colors.muted }]}>
-              No prepared items yet. Add a material and tick "Prepared item" (e.g. Burger (ready) made from bun + patty + cheese).
+              No recipes yet. Open the Recipes tab, tap a food (e.g. Burger), and save Bun + Patty + Cheese first.
             </Text>
           ) : (
-            <MaterialSelect materials={prepared} value={outputId} onChange={setOutputId} stock={stock} />
+            <View style={styles.chipWrap}>
+              {recipeProducts.map((p) => (
+                <Chip key={p.id} label={p.name} on={productId === p.id} onPress={() => setProductId(p.id)} />
+              ))}
+            </View>
           )}
-          <Input value={outputQty} onChangeText={(v) => setOutputQty(v.replace(/[^\d.]/g, ''))} keyboardType="decimal-pad" placeholder={`How many${output ? ` (${output.unit})` : ''}`} />
-          {output?.inputs?.length && Number(outputQty) > 0 ? (
+          <Input
+            value={outputQty}
+            onChangeText={(v) => setOutputQty(v.replace(/[^\d.]/g, ''))}
+            keyboardType="decimal-pad"
+            placeholder="How many pcs did you make?"
+          />
+          {selectedRecipe?.lines.length && Number(outputQty) > 0 ? (
             <View style={[styles.costCard, { backgroundColor: colors.gradientTop }]}>
               <Text style={[styles.hint, { color: colors.muted }]}>This will use:</Text>
-              {output.inputs.map((part) => {
+              {selectedRecipe.lines.map((part) => {
                 const m = data.materials.find((x) => x.id === part.materialId);
                 if (!m) return null;
-                const need = part.qty * Number(outputQty);
-                const short = need > (stock[m.id] ?? 0);
+                const needQty = part.qty * Number(outputQty);
+                const short = needQty > (stock[m.id] ?? 0);
                 return (
-                  <CostRow key={part.materialId} small label={`${m.name}`} value={`${formatQty(need, m.unit)}${short ? '  ⚠ short' : ''}`} tone={short ? colors.expenseText : undefined} />
+                  <CostRow
+                    key={part.materialId}
+                    small
+                    label={`${m.name}`}
+                    value={`${formatQty(needQty, m.unit)}${short ? '  ⚠ short' : ''}`}
+                    tone={short ? colors.expenseText : undefined}
+                  />
                 );
               })}
             </View>
           ) : null}
+        </>
+      ) : null}
+
+      {kind === 'toFoods' ? (
+        <>
+          <Label>KITCHEN-READY FOOD</Label>
+          {readyProducts.length === 0 && recipeProducts.length === 0 ? (
+            <Text style={[styles.hint, { color: colors.muted }]}>
+              Save a recipe, Produce it, then transfer here so cashier Foods stock goes up.
+            </Text>
+          ) : (
+            <View style={styles.chipWrap}>
+              {(readyProducts.length ? readyProducts : recipeProducts).map((p) => {
+                const ready = readyMaterialFor(p.id, data.materials);
+                const q = ready ? stock[ready.id] ?? 0 : 0;
+                return (
+                  <Chip
+                    key={p.id}
+                    label={`${p.name}${ready ? ` · ${formatQty(q, ready.unit)}` : ''}`}
+                    on={productId === p.id}
+                    onPress={() => setProductId(p.id)}
+                  />
+                );
+              })}
+            </View>
+          )}
+          {selectedReady ? (
+            <Text style={[styles.hint, { color: colors.ink }]}>
+              Ready in kitchen: {formatQty(stock[selectedReady.id] ?? 0, selectedReady.unit)} · On Foods now:{' '}
+              {selectedProduct?.stock ?? 0} {selectedProduct?.unit ?? 'pcs'}
+            </Text>
+          ) : null}
+          <Input
+            value={outputQty}
+            onChangeText={(v) => setOutputQty(v.replace(/[^\d.]/g, ''))}
+            keyboardType="decimal-pad"
+            placeholder="How many to send to cashier?"
+          />
         </>
       ) : null}
 
@@ -396,7 +456,7 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
           <LinesEditor
             lines={lines}
             onChange={setLines}
-            materials={data.materials}
+            materials={kind === 'purchase' ? rawMaterials : data.materials}
             withCost={kind === 'purchase'}
             withExpiry={kind === 'purchase'}
             stock={kind === 'purchase' ? undefined : stock}
@@ -448,7 +508,7 @@ export function MoveForm({ kind, onClose, onDone }: { kind: MoveKind | null; onC
           <Text style={[styles.hint, { color: colors.muted }]}>
             Enter what you counted. Leave blank to skip an item. The difference is saved as an adjustment and shows in the variance report.
           </Text>
-          {data.materials.map((m) => {
+          {rawMaterials.map((m) => {
             const book = stock[m.id] ?? 0;
             const typed = counts[m.id];
             const diff = typed !== undefined && typed.trim() !== '' ? Number(typed) - book : null;

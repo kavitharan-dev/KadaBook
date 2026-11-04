@@ -9,16 +9,18 @@ import { markSignedOut, usePinLock } from '../components/PinLockGate';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import type { Locale } from '../i18n';
 import { useAuth } from '../context/AuthContext';
+import { useBooks } from '../context/BooksContext';
 import { ROLE_LABEL, useRole } from '../lib/roles';
 import { useTheme } from '../context/ThemeContext';
 import { useI18n } from '../context/LocaleContext';
 import { useShopGate } from '../context/ShopGateContext';
 import { displayAccount } from '../data/repository';
+import { resolveQuickSaleProfitPercent } from '../lib/dayClose';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { APP_VERSION, BUILD_TAG } from '../config/build';
 import * as Updates from 'expo-updates';
 import { printThermalText } from '../lib/thermalPrinter';
-import { SHOP_TYPE_HELP, SHOP_TYPE_LABEL, usesKitchenStock } from '../lib/shopType';
+import { usesKitchenStock } from '../lib/shopType';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
@@ -80,8 +82,10 @@ export function MoreScreen() {
   const navigation = useNavigation<
     CompositeNavigationProp<BottomTabNavigationProp<TabParamList, 'More'>, NativeStackNavigationProp<AppStackParamList>>
   >();
-  const { user, cloud, signOut, updateShopName, updateShopType } = useAuth();
+  const { user, cloud, signOut, updateShopName } = useAuth();
+  const { books, setQuickSaleProfitPercent } = useBooks();
   const { role, can } = useRole();
+  const isOwner = role === 'owner';
   const { profile, status, trialDays, subscription } = useShopGate();
   const { changePin, pinEnabled, enablePin, disablePin } = usePinLock();
   const { colors } = useTheme();
@@ -97,8 +101,10 @@ export function MoreScreen() {
   );
   const shopType = profile?.shopType ?? user?.shopType;
   const showKitchen = usesKitchenStock(shopType);
+  const savedQuickPct = resolveQuickSaleProfitPercent(books.meta);
 
   const [shopName, setShopName] = useState(currentName);
+  const [quickPctInput, setQuickPctInput] = useState(String(savedQuickPct));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -106,6 +112,10 @@ export function MoreScreen() {
   useEffect(() => {
     setShopName(currentName);
   }, [currentName]);
+
+  useEffect(() => {
+    setQuickPctInput(String(savedQuickPct));
+  }, [savedQuickPct]);
 
   async function saveName() {
     setError(null);
@@ -121,15 +131,20 @@ export function MoreScreen() {
     }
   }
 
-  async function saveShopType(next: 'retail' | 'kitchen') {
+  async function saveQuickProfit() {
     setError(null);
     setMessage(null);
+    const value = Math.round(Number(quickPctInput));
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      setError(t((m) => m.more.quickProfitError));
+      return;
+    }
     setBusy(true);
     try {
-      await updateShopType(next);
-      setMessage(next === 'kitchen' ? 'Shop type: Kitchen / Restaurant' : 'Shop type: Retail shop');
+      await setQuickSaleProfitPercent(value);
+      setMessage(t((m) => m.more.quickProfitSaved));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t((m) => m.more.shopError));
+      setError(caught instanceof Error ? caught.message : t((m) => m.more.quickProfitError));
     } finally {
       setBusy(false);
     }
@@ -190,9 +205,17 @@ export function MoreScreen() {
             <View style={styles.chip}>
               <Text style={styles.chipText}>{chip}</Text>
             </View>
-            <Pressable onPress={() => navigation.navigate('UpgradePlan')} style={styles.upgradeBtn}>
-              <Text style={styles.upgradeText}>{t((m) => m.settings.upgradeTitle)}</Text>
-            </Pressable>
+            {isOwner ? (
+              <Pressable onPress={() => navigation.navigate('UpgradePlan')} style={styles.upgradeBtn}>
+                <Text style={styles.upgradeText}>
+                  {status === 'expired' ? t((m) => m.gate.renewWhatsApp) : t((m) => m.settings.upgradeTitle)}
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={[styles.upgradeBtn, { opacity: 0.85 }]}>
+                <Text style={styles.upgradeText}>{ROLE_LABEL[role]}</Text>
+              </View>
+            )}
           </View>
         </LinearGradient>
 
@@ -217,38 +240,20 @@ export function MoreScreen() {
                   disabled={busy || !shopName.trim() || shopName.trim() === currentName}
                 />
                 <View style={styles.divider} />
-                <Text style={styles.fieldLabel}>Shop type</Text>
-                <Text style={[styles.typeChipText, { color: colors.ink, marginBottom: 4 }]}>
-                  {shopType ? SHOP_TYPE_LABEL[shopType] : 'Not set'}
-                </Text>
-                <Text style={styles.typeHint}>
-                  {shopType
-                    ? SHOP_TYPE_HELP[shopType]
-                    : 'Set during registration. Kitchen shops see Kitchen & Stock on the dashboard.'}
-                </Text>
-                {shopType ? (
-                  <Pressable
-                    disabled={busy}
-                    onPress={() => {
-                      const next = shopType === 'kitchen' ? 'retail' : 'kitchen';
-                      Alert.alert(
-                        'Change shop type?',
-                        next === 'kitchen'
-                          ? 'Switch to Kitchen / Restaurant? Kitchen & Stock will appear on the dashboard.'
-                          : 'Switch to Retail shop? Kitchen & Stock will be hidden. Your kitchen data stays saved.',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: `Switch to ${SHOP_TYPE_LABEL[next]}`, onPress: () => void saveShopType(next) },
-                        ],
-                      );
-                    }}
-                    style={{ paddingVertical: 8 }}
-                  >
-                    <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.brand }}>
-                      Change shop type…
-                    </Text>
-                  </Pressable>
-                ) : null}
+                <Text style={styles.fieldLabel}>{t((m) => m.more.quickProfitPercent)}</Text>
+                <Text style={styles.fieldHint}>{t((m) => m.more.quickProfitPercentHint)}</Text>
+                <Field
+                  value={quickPctInput}
+                  onChangeText={setQuickPctInput}
+                  placeholder="10"
+                  keyboardType="number-pad"
+                />
+                <FillButton
+                  label={t((m) => m.more.saveQuickProfit)}
+                  onPress={saveQuickProfit}
+                  busy={busy}
+                  disabled={busy || String(savedQuickPct) === quickPctInput.trim()}
+                />
               </>
             ) : null}
             <ErrorText message={error} />
@@ -557,6 +562,13 @@ function moreStyles(c: ColorPalette) {
       fontFamily: fonts.regular,
       fontSize: 12,
       color: c.muted,
+    },
+    fieldHint: {
+      fontFamily: fonts.regular,
+      fontSize: 12,
+      lineHeight: 17,
+      color: c.muted,
+      marginBottom: 4,
     },
     typeHint: {
       fontFamily: fonts.regular,
