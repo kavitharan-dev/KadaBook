@@ -108,6 +108,22 @@ export type SubscriptionDoc = {
   startsAt: number;
   expiresAt: number;
   status: 'trial' | 'active' | 'grace' | 'expired';
+  /**
+   * When false/missing → all features unlocked (grandfather / not customized yet).
+   * When true → only `enabledFeatures` are unlocked.
+   */
+  featuresConfigured?: boolean;
+  /** Active features after admin tick/untick. */
+  enabledFeatures?: string[];
+  /** Base plan amount (customizable). */
+  planPrice?: number;
+  /** Per-feature amounts used for this shop (optional overrides). */
+  featureAmounts?: Record<string, number>;
+  /** planPrice + add-on feature amounts. */
+  monthlyTotal?: number;
+  /** Optional seat overrides after featuresConfigured (default 2 / 2). */
+  staffSeats?: number;
+  branchLimit?: number;
 };
 
 export type AppConfigMain = {

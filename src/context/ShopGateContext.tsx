@@ -149,6 +149,18 @@ export function ShopGateProvider({ children }: { children: ReactNode }) {
             startsAt: millis(d.startsAt),
             expiresAt: millis(d.expiresAt),
             status: (d.status as SubscriptionDoc['status']) ?? 'trial',
+            featuresConfigured: d.featuresConfigured === true,
+            enabledFeatures: Array.isArray(d.enabledFeatures)
+              ? d.enabledFeatures.filter((x: unknown) => typeof x === 'string')
+              : undefined,
+            planPrice: typeof d.planPrice === 'number' ? d.planPrice : undefined,
+            featureAmounts:
+              d.featureAmounts && typeof d.featureAmounts === 'object'
+                ? (d.featureAmounts as Record<string, number>)
+                : undefined,
+            monthlyTotal: typeof d.monthlyTotal === 'number' ? d.monthlyTotal : undefined,
+            staffSeats: typeof d.staffSeats === 'number' ? d.staffSeats : undefined,
+            branchLimit: typeof d.branchLimit === 'number' ? d.branchLimit : undefined,
           });
         }),
       );

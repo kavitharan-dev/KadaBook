@@ -28,6 +28,11 @@ export type Subscription = {
   startsAt: number;
   expiresAt: number;
   status: 'trial' | 'active' | 'grace' | 'expired';
+  featuresConfigured?: boolean;
+  enabledFeatures?: string[];
+  planPrice?: number;
+  monthlyTotal?: number;
+  tier?: 'basic' | 'pro' | 'premium';
 };
 
 export type Payment = {
@@ -46,6 +51,9 @@ export type Plan = {
   name: string;
   days: number;
   price: number;
+  /** false = archived / old model — hide from Payments + APK pickers */
+  active?: boolean;
+  tier?: 'basic' | 'pro' | 'premium';
 };
 
 export type AdminProfile = {

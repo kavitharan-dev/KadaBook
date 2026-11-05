@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BranchSelect, Chip, Input, Label, Sheet } from '../components/kitchen/KitchenUi';
@@ -8,11 +9,18 @@ import { FillButton, Header, Screen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
 import { useKitchen } from '../context/KitchenContext';
+import { useShopGate } from '../context/ShopGateContext';
 import { useTheme } from '../context/ThemeContext';
 import { usingCloud } from '../data/services';
 import { ALL_BRANCHES, type PermissionOverrides, type StaffMember } from '../data/types';
 import { createStaffAccount, updateStaffMember } from '../firebase/client';
 import { formatDay, formatTime } from '../lib/format';
+import {
+  branchBlocked,
+  planLimits,
+  quotaUpgradeWhatsAppMessage,
+  staffSeatBlocked,
+} from '../lib/planQuota';
 import { ROLE_HELP, ROLE_LABEL, TICK_PERMISSIONS, roleCan, templateAllows, useRole, type Permission } from '../lib/roles';
 import type { AppStackParamList } from '../navigation/types';
 import { fonts } from '../theme/fonts';
@@ -29,6 +37,7 @@ export function StaffScreen() {
   const { books, logAudit } = useBooks();
   const kitchen = useKitchen();
   const { can } = useRole();
+  const { subscription, openRenewWhatsApp, profile } = useShopGate();
   const toast = useToast();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -50,7 +59,30 @@ export function StaffScreen() {
     () => [...books.staff].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)),
     [books.staff],
   );
+  const activeStaffCount = members.filter((m) => m.active).length;
+  const limits = planLimits(subscription);
   const shopUid = user?.uid ?? '';
+
+  function askUpgrade(kind: 'staff' | 'branch', current: number, limit: number) {
+    const shopName = profile?.shopName ?? user?.shopName ?? '-';
+    const phone = profile?.phone ?? user?.phone ?? '-';
+    Alert.alert(
+      kind === 'staff' ? 'Staff limit reached' : 'Branch limit reached',
+      kind === 'staff'
+        ? `Plan includes ${limit} staff login${limit === 1 ? '' : 's'}. Message admin to add more seats.`
+        : `Plan includes ${limit} branch${limit === 1 ? '' : 'es'}. Message admin to add more.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'WhatsApp admin',
+          onPress: () =>
+            openRenewWhatsApp(
+              quotaUpgradeWhatsAppMessage({ kind, shopName, phone: String(phone), current, limit }),
+            ),
+        },
+      ],
+    );
+  }
 
   if (!can('manageStaff')) {
     return (
@@ -68,9 +100,14 @@ export function StaffScreen() {
 
   /** A cashier belongs to exactly one branch. Managers may also cover all of them. */
   const needsBranch = (member: Pick<StaffMember, 'role' | 'branchId'>) =>
-    branches.length > 0 && member.role === 'cashier' && (!member.branchId || member.branchId === ALL_BRANCHES);
+    branches.length > 1 && member.role === 'cashier' && (!member.branchId || member.branchId === ALL_BRANCHES);
 
   function openAdd() {
+    const block = staffSeatBlocked(activeStaffCount, subscription);
+    if (block) {
+      askUpgrade('staff', activeStaffCount, block.limit);
+      return;
+    }
     setRole('cashier');
     setBranchChoice(mainBranchId);
     setError(null);
@@ -86,9 +123,15 @@ export function StaffScreen() {
     setBusy(true);
     setError(null);
     try {
+      const block = staffSeatBlocked(activeStaffCount, subscription);
+      if (block) {
+        setAdding(false);
+        askUpgrade('staff', activeStaffCount, block.limit);
+        return;
+      }
       if (!usingCloud) throw new Error('Staff logins need the cloud (Firebase) version of KadaBook.');
       if (needsBranch({ role, branchId: branchChoice })) throw new Error('Choose the branch this cashier works at.');
-      await createStaffAccount(shopUid, { name, identity: login, password, role, branchId: branchChoice });
+      await createStaffAccount(shopUid, { name, identity: login, password, role, branchId: branches.length > 1 ? branchChoice : undefined });
       logAudit('Staff added', `${name.trim()} as ${ROLE_LABEL[role]} at ${branchLabel(branchChoice)} (${login.trim()})`);
       toast.show('success', `${name.trim()} can now sign in with ${login.trim()}`);
       setAdding(false);
@@ -137,6 +180,12 @@ export function StaffScreen() {
         await kitchen.renameBranch(branchForm.id, branchForm.name);
         logAudit('Branch renamed', branchForm.name.trim());
       } else {
+        const block = branchBlocked(branches.length, subscription);
+        if (block) {
+          setBranchForm(null);
+          askUpgrade('branch', branches.length, block.limit);
+          return;
+        }
         await kitchen.addBranch(branchForm.name);
         logAudit('Branch added', branchForm.name.trim());
       }
@@ -168,37 +217,110 @@ export function StaffScreen() {
         </View>
 
         <Text style={[styles.section, { color: colors.ink }]}>Branches</Text>
-        {branches.length === 0 ? (
-          <Text style={[styles.sub, { color: colors.muted }]}>
-            One shop? You can skip this. Add your main branch first if you run more than one location.
-          </Text>
-        ) : null}
+        <Text style={[styles.sub, { color: colors.muted }]}>
+          {branches.length === 0
+            ? 'Owner account is your main shop. Add a main branch first, then sub-branches (e.g. Counter) for kitchen Send.'
+            : '★ Main = this owner shop. Add a sub-branch so Kitchen can Send stock between locations.'}
+        </Text>
         {branches.map((b) => (
-          <Pressable
+          <View
             key={b.id}
-            onPress={() => {
-              setBranchError(null);
-              setBranchForm({ id: b.id, name: b.name });
-            }}
             style={[styles.card, { backgroundColor: colors.white, borderColor: colors.hairline }]}
           >
-            <View style={styles.flex}>
-              <Text style={[styles.name, { color: colors.ink }]} numberOfLines={1}>{b.isMain ? `★ ${b.name}` : b.name}</Text>
-              <Text style={[styles.sub, { color: colors.muted }]}>
-                {members.filter((m) => m.active && m.branchId === b.id).length} staff
+            <Pressable
+              style={styles.flex}
+              onPress={() => {
+                setBranchError(null);
+                setBranchForm({ id: b.id, name: b.name });
+              }}
+            >
+              <Text style={[styles.name, { color: colors.ink }]} numberOfLines={1}>
+                {b.isMain ? `★ ${b.name} · Main` : b.name}
               </Text>
-            </View>
-            <Text style={[styles.sub, { color: colors.brand }]}>Rename</Text>
-          </Pressable>
+              <Text style={[styles.sub, { color: colors.muted }]}>
+                {b.isMain
+                  ? `Owner · ${user?.phone ?? user?.email ?? 'this account'}`
+                  : `${members.filter((m) => m.active && m.branchId === b.id).length} staff · Sub-branch`}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setBranchError(null);
+                setBranchForm({ id: b.id, name: b.name });
+              }}
+            >
+              <Text style={[styles.sub, { color: colors.brand }]}>Rename</Text>
+            </Pressable>
+            {!b.isMain && branches.length > 1 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${b.name}`}
+                hitSlop={8}
+                onPress={() => {
+                  Alert.alert(
+                    `Delete “${b.name}”?`,
+                    'Stock at this branch will be removed. This cannot be undone.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => {
+                          void (async () => {
+                            try {
+                              await kitchen.deleteBranch(b.id);
+                              logAudit('Branch deleted', b.name);
+                              toast.show('success', `${b.name} deleted`);
+                            } catch (caught) {
+                              toast.show(
+                                'error',
+                                caught instanceof Error ? caught.message : 'Could not delete branch.',
+                              );
+                            }
+                          })();
+                        },
+                      },
+                    ],
+                  );
+                }}
+                style={[styles.deleteChip, { backgroundColor: colors.expenseWash }]}
+              >
+                <Text style={{ color: colors.danger, fontFamily: fonts.bold, fontSize: 14 }}>×</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ))}
-        <FillButton
-          label={branches.length === 0 ? '＋ Add main branch' : '＋ Add branch'}
-          color={colors.line}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={branches.length === 0 ? 'Add main branch' : 'Add sub-branch'}
           onPress={() => {
+            const block = branchBlocked(branches.length, subscription);
+            if (block) {
+              askUpgrade('branch', branches.length, block.limit);
+              return;
+            }
             setBranchError(null);
             setBranchForm({ id: null, name: '' });
           }}
-        />
+          style={styles.addBranchWrap}
+        >
+          <LinearGradient
+            colors={['#1E40AF', '#1D5FE0', '#3B82F6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.addBranchBtn}
+          >
+            <Text style={styles.addBranchPlus}>＋</Text>
+            <Text style={styles.addBranchLabel}>
+              {branches.length === 0 ? 'Add main branch' : 'Add sub-branch'}
+            </Text>
+          </LinearGradient>
+        </Pressable>
+        {!limits.grandfather && limits.branches != null ? (
+          <Text style={[styles.sub, { color: colors.muted }]}>
+            Plan: {branches.length}/{limits.branches} branches
+          </Text>
+        ) : null}
 
         <Text style={[styles.section, { color: colors.ink }]}>Staff</Text>
         {(['manager', 'cashier'] as StaffRoleChoice[]).map((r) => (
@@ -225,7 +347,7 @@ export function StaffScreen() {
               <Text style={[styles.sub, { color: colors.muted }]} numberOfLines={1}>
                 {m.login ?? ''} · {m.active ? lastSeen(m) : 'Switched off'}
               </Text>
-              {branches.length > 0 ? (
+              {branches.length > 1 ? (
                 <Text style={[styles.sub, { color: m.active && needsBranch(m) ? colors.expenseText : colors.muted }]} numberOfLines={1}>
                   {m.active && needsBranch(m) ? 'Tap to choose a branch' : branchLabel(m.branchId)}
                 </Text>
@@ -237,6 +359,11 @@ export function StaffScreen() {
           </Pressable>
         ))}
 
+        {!limits.grandfather && limits.staffSeats != null ? (
+          <Text style={[styles.sub, { color: colors.muted }]}>
+            Plan: {activeStaffCount}/{limits.staffSeats} staff logins (active)
+          </Text>
+        ) : null}
         <FillButton label="＋ Add staff login" onPress={openAdd} />
         <Pressable onPress={() => navigation.navigate('AuditLog')}>
           <Text style={[styles.link, { color: colors.brand }]}>Open audit log ›</Text>
@@ -266,7 +393,7 @@ export function StaffScreen() {
           ))}
         </View>
         <Text style={[styles.sub, { color: colors.muted }]}>{ROLE_HELP[role]}</Text>
-        {branches.length > 0 ? (
+        {branches.length > 1 ? (
           <>
             <Label>BRANCH</Label>
             <BranchSelect
@@ -288,7 +415,7 @@ export function StaffScreen() {
                 <Chip key={r} label={ROLE_LABEL[r]} on={editing.role === r} onPress={() => editing.role !== r && changeRole(editing, r)} />
               ))}
             </View>
-            {branches.length > 0 ? (
+            {branches.length > 1 ? (
               <>
                 <Label>BRANCH</Label>
                 <BranchSelect
@@ -319,7 +446,16 @@ export function StaffScreen() {
               </View>
               <Switch
                 value={editing.active}
-                onValueChange={(v) => change(editing, { active: v }, v ? 'switched on' : 'switched off')}
+                onValueChange={(v) => {
+                  if (v && !editing.active) {
+                    const block = staffSeatBlocked(activeStaffCount, subscription);
+                    if (block) {
+                      askUpgrade('staff', activeStaffCount, block.limit);
+                      return;
+                    }
+                  }
+                  change(editing, { active: v }, v ? 'switched on' : 'switched off');
+                }}
                 trackColor={{ true: colors.sale, false: colors.line }}
               />
             </View>
@@ -332,8 +468,20 @@ export function StaffScreen() {
 
       <Sheet
         visible={branchForm !== null}
-        title={branchForm?.id ? 'Rename branch' : 'Add branch'}
-        subtitle={branchForm?.id || branches.length > 0 ? undefined : 'Your sales so far count as this main branch'}
+        title={
+          branchForm?.id
+            ? 'Rename branch'
+            : branches.length === 0
+              ? 'Add main branch'
+              : 'Add sub-branch'
+        }
+        subtitle={
+          branchForm?.id
+            ? undefined
+            : branches.length === 0
+              ? 'Owner shop becomes the main branch. Kitchen stock starts here.'
+              : 'Sub-branch for Send (e.g. Counter / Takeaway). Main stays the owner shop.'
+        }
         onClose={() => setBranchForm(null)}
         actionLabel="Save"
         onAction={saveBranch}
@@ -344,7 +492,7 @@ export function StaffScreen() {
         <Input
           value={branchForm?.name ?? ''}
           onChangeText={(v) => setBranchForm((form) => (form ? { ...form, name: v.slice(0, 40) } : form))}
-          placeholder="e.g. Colombo 6"
+          placeholder={branches.length === 0 ? 'e.g. Main kitchen' : 'e.g. Counter'}
         />
       </Sheet>
       <Toast toast={toast.toast} onHide={toast.hide} />
@@ -371,4 +519,33 @@ const styles = StyleSheet.create({
   tickLabel: { fontFamily: fonts.regular, fontSize: 14, flexShrink: 1 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: 1, paddingTop: 12, marginTop: 4 },
   link: { fontFamily: fonts.semibold, fontSize: 14, textAlign: 'center', paddingVertical: 8 },
+  deleteChip: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBranchWrap: {
+    alignSelf: 'stretch',
+    borderRadius: 14,
+    overflow: 'hidden',
+    shadowColor: '#1D5FE0',
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    marginTop: 4,
+  },
+  addBranchBtn: {
+    minHeight: 52,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  addBranchPlus: { fontFamily: fonts.bold, fontSize: 22, color: '#FFFFFF', lineHeight: 26 },
+  addBranchLabel: { fontFamily: fonts.bold, fontSize: 16, color: '#FFFFFF', letterSpacing: 0.2 },
 });

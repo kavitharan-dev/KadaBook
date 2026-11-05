@@ -28,11 +28,11 @@ import { requireFeature, requirePermission } from '../components/RequirePermissi
 
 // Staff roles: screens a cashier (or manager) may not use show a lock instead.
 // Firestore rules block the same actions on the server.
-const Products = requirePermission(ProductsScreen, 'manageProducts', 'Products');
-const Reports = requirePermission(ReportsScreen, 'viewReports', 'Reports');
-const AddExpense = requirePermission(AddExpenseScreen, 'addExpense', 'Add expense');
-const Expenses = requirePermission(ExpensesScreen, 'addExpense', 'Expenses');
-const Month = requirePermission(MonthScreen, 'viewReports', 'Month');
+const Products = requireFeature(requirePermission(ProductsScreen, 'manageProducts', 'Products'), 'products', 'Products');
+const Reports = requireFeature(requirePermission(ReportsScreen, 'viewReports', 'Reports'), 'fullReports', 'Reports');
+const AddExpense = requireFeature(requirePermission(AddExpenseScreen, 'addExpense', 'Add expense'), 'expenses', 'Add expense');
+const Expenses = requireFeature(requirePermission(ExpensesScreen, 'addExpense', 'Expenses'), 'expenses', 'Expenses');
+const Month = requireFeature(requirePermission(MonthScreen, 'viewReports', 'Month'), 'fullReports', 'Month');
 const SettingsMenu = requirePermission(SettingsMenuScreen, 'shopSettings', 'Settings');
 const ReceiptSettings = requirePermission(ReceiptSettingsScreen, 'shopSettings', 'Receipt');
 const UpgradePlan = requirePermission(UpgradePlanScreen, 'shopSettings', 'Plan');
@@ -40,7 +40,7 @@ const CreditSettings = requireFeature(requirePermission(CreditSettingsScreen, 's
 // Plan gates (Basic / Pro / Premium). The role check runs first, then the plan.
 const CreditBook = requireFeature(CreditBookScreen, 'creditBook', 'Credit book');
 const CreditLedger = requireFeature(CreditLedgerScreen, 'creditBook', 'Credit book');
-const Kitchen = requireFeature(requirePermission(KitchenScreen, 'manageStock', 'Kitchen & Stock'), 'kitchenStock', 'Kitchen & Stock');
+const Kitchen = requireFeature(requirePermission(KitchenScreen, 'manageStock', 'Kitchen'), 'kitchenStock', 'Kitchen');
 const DataTools = requireFeature(requirePermission(DataToolsScreen, 'exportData', 'Excel export & import'), 'exportData', 'Excel export & import');
 const Staff = requireFeature(requirePermission(StaffScreen, 'manageStaff', 'Staff'), 'staff', 'Staff');
 const AuditLog = requireFeature(requirePermission(AuditLogScreen, 'viewAudit', 'Audit log'), 'staff', 'Audit log');

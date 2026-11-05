@@ -31,7 +31,7 @@ export function FullReports({
   const [sort, setSort] = useState<Sort>('qty');
   const [showAll, setShowAll] = useState(false);
 
-  const items = useMemo(() => itemReport(sales, products, data), [sales, products, data]);
+  const items = useMemo(() => itemReport(sales, products), [sales, products]);
   const sorted = [...items].sort((a, b) => b[sort] - a[sort]);
   const shown = showAll ? sorted : sorted.slice(0, 8);
   const expenseSplit = useMemo(() => expenseBreakdown(expenses), [expenses]);

@@ -21,6 +21,7 @@ import { APP_VERSION, BUILD_TAG } from '../config/build';
 import * as Updates from 'expo-updates';
 import { printThermalText } from '../lib/thermalPrinter';
 import { usesKitchenStock } from '../lib/shopType';
+import { useTier } from '../lib/useTier';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
@@ -101,6 +102,7 @@ export function MoreScreen() {
   );
   const shopType = profile?.shopType ?? user?.shopType;
   const showKitchen = usesKitchenStock(shopType);
+  const { has } = useTier();
   const savedQuickPct = resolveQuickSaleProfitPercent(books.meta);
 
   const [shopName, setShopName] = useState(currentName);
@@ -305,36 +307,56 @@ export function MoreScreen() {
         <Section label="Shop tools">
           {can('collectCredit') ? (
             <Row
-              title="Credit book"
-              subtitle="Customer dues, collect payments, WhatsApp reminders"
+              title={has('creditBook') ? 'Credit book' : '🔒 Credit book'}
+              subtitle={
+                has('creditBook')
+                  ? 'Customer dues, collect payments, WhatsApp reminders'
+                  : 'Locked — ask admin to enable this add-on'
+              }
               onPress={() => navigation.navigate('CreditBook')}
             />
           ) : null}
           {can('manageStock') && showKitchen ? (
             <Row
-              title="Kitchen & Stock"
-              subtitle="Raw materials, recipe cost, branches, transfers, variance"
+              title={has('kitchenStock') ? 'Kitchen' : '🔒 Kitchen'}
+              subtitle={
+                has('kitchenStock')
+                  ? 'Buy, send to branch, make food'
+                  : 'Locked — ask admin to enable kitchen add-on'
+              }
               onPress={() => navigation.navigate('Kitchen')}
             />
           ) : null}
           {can('exportData') ? (
             <Row
-              title="Excel export & import"
-              subtitle="Export sales, expenses, stock to .xlsx · bulk import products"
+              title={has('exportData') ? 'Excel export & import' : '🔒 Excel export & import'}
+              subtitle={
+                has('exportData')
+                  ? 'Export sales, expenses, stock to .xlsx · bulk import products'
+                  : 'Locked — ask admin to enable this add-on'
+              }
               onPress={() => navigation.navigate('DataTools')}
             />
           ) : null}
           {can('manageStaff') ? (
             <Row
-              title="Staff & roles"
-              subtitle="Branches, cashier and manager logins, what each person can do"
+              title={has('staff') ? 'Staff & roles' : '🔒 Staff & roles'}
+              subtitle={
+                has('staff')
+                  ? 'Branches, cashier and manager logins, what each person can do'
+                  : 'Locked — ask admin to enable staff add-on'
+              }
               onPress={() => navigation.navigate('Staff')}
             />
           ) : null}
           {can('viewAudit') ? (
             <Row
-              title="Audit log"
-              subtitle="Who deleted, edited or changed what, and when"
+              title={has('staff') ? 'Audit log' : '🔒 Audit log'}
+              subtitle={
+                has('staff')
+                  ? 'Who deleted, edited or changed what, and when'
+                  : 'Locked — ask admin to enable staff add-on'
+              }
               onPress={() => navigation.navigate('AuditLog')}
             />
           ) : null}

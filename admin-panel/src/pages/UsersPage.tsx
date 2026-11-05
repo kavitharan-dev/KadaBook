@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ShopFeaturePanel } from '../components/ShopFeaturePanel';
 import {
   EmptyState,
   GhostButton,
@@ -10,30 +11,54 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useCollection } from '../hooks/useCollection';
-import { mapShop } from '../lib/mappers';
+import { mapShop, mapSub } from '../lib/mappers';
 import { setShopStatus } from '../lib/shopOps';
-import type { ShopStatus } from '../types/models';
+import type { ShopStatus, ShopUser } from '../types/models';
 
-const TABS: (ShopStatus | 'all')[] = ['all', 'pending', 'trial', 'active', 'grace', 'expired', 'suspended', 'rejected'];
+/** Activated shops first — trial / active / grace. */
+const ACTIVATED: ShopStatus[] = ['active', 'trial', 'grace'];
+const TABS: (ShopStatus | 'activated' | 'all')[] = [
+  'activated',
+  'all',
+  'pending',
+  'trial',
+  'active',
+  'grace',
+  'expired',
+  'suspended',
+  'rejected',
+];
 
 export function UsersPage() {
   const { rows, loading } = useCollection('users', mapShop);
-  const [tab, setTab] = useState<(typeof TABS)[number]>('all');
+  const { rows: subs } = useCollection('subscriptions', mapSub);
+  const [tab, setTab] = useState<(typeof TABS)[number]>('activated');
   const [q, setQ] = useState('');
+  const [editShop, setEditShop] = useState<ShopUser | null>(null);
   const { admin } = useAuth();
   const { push } = useToast();
 
+  const subByUid = useMemo(() => {
+    const m = new Map<string, (typeof subs)[0]>();
+    for (const s of subs) m.set(s.uid, s);
+    return m;
+  }, [subs]);
+
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    return rows.filter((s) => {
-      if (tab !== 'all' && s.status !== tab) return false;
-      if (!query) return true;
-      return (
-        s.shopName.toLowerCase().includes(query) ||
-        (s.ownerName ?? '').toLowerCase().includes(query) ||
-        (s.phone ?? '').includes(query)
-      );
-    });
+    return rows
+      .filter((s) => {
+        if (tab === 'activated') {
+          if (!ACTIVATED.includes(s.status)) return false;
+        } else if (tab !== 'all' && s.status !== tab) return false;
+        if (!query) return true;
+        return (
+          s.shopName.toLowerCase().includes(query) ||
+          (s.ownerName ?? '').toLowerCase().includes(query) ||
+          (s.phone ?? '').includes(query)
+        );
+      })
+      .sort((a, b) => a.shopName.localeCompare(b.shopName));
   }, [rows, tab, q]);
 
   async function toggleSuspend(uid: string, suspend: boolean) {
@@ -47,9 +72,18 @@ export function UsersPage() {
     }
   }
 
+  function featureHint(uid: string) {
+    const sub = subByUid.get(uid);
+    if (!sub?.featuresConfigured) return 'All ON (live)';
+    return `${sub.enabledFeatures?.length ?? 0} features`;
+  }
+
   return (
     <div>
-      <PageTitle title="Users / Shops" subtitle="Search and manage merchant accounts" />
+      <PageTitle
+        title="Manage Shops"
+        subtitle="Activated shops listed first. Click a shop → see currently ON features (ticked). Customize + Save → app unlocks update."
+      />
       <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
@@ -60,7 +94,7 @@ export function UsersPage() {
               tab === t ? 'bg-brand text-white' : 'bg-surface border border-line text-muted'
             }`}
           >
-            {t}
+            {t === 'activated' ? 'Activated' : t}
           </button>
         ))}
       </div>
@@ -75,11 +109,11 @@ export function UsersPage() {
       ) : (
         <TableWrap>
           <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-line bg-brand-soft/40 text-xs uppercase text-muted">
+            <thead className="border-b border-line bg-brand-soft text-xs uppercase text-muted">
               <tr>
                 <th className="px-4 py-3">Shop</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">District</th>
+                <th className="px-4 py-3">Features</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -92,21 +126,27 @@ export function UsersPage() {
                 </tr>
               ) : (
                 filtered.map((s) => (
-                  <tr key={s.uid} className="border-b border-line/70">
+                  <tr key={s.uid} className="border-b border-line/70 hover:bg-brand-soft/50">
                     <td className="px-4 py-3">
-                      <div className="font-semibold">{s.shopName}</div>
-                      <div className="text-xs text-muted">{s.ownerName ?? s.phone ?? s.uid}</div>
+                      <button type="button" className="text-left" onClick={() => setEditShop(s)}>
+                        <div className="font-semibold text-brand hover:underline">{s.shopName}</div>
+                        <div className="text-xs text-muted">{s.ownerName ?? s.phone ?? s.uid}</div>
+                        <div className="mt-0.5 text-[11px] font-medium text-muted">Click → features</div>
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={s.status} />
                     </td>
-                    <td className="px-4 py-3">{s.district ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs font-medium text-ink">{featureHint(s.uid)}</td>
                     <td className="px-4 py-3">
-                      {s.status === 'suspended' ? (
-                        <GhostButton onClick={() => toggleSuspend(s.uid, false)}>Reactivate</GhostButton>
-                      ) : (
-                        <GhostButton onClick={() => toggleSuspend(s.uid, true)}>Suspend</GhostButton>
-                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <GhostButton onClick={() => setEditShop(s)}>Features</GhostButton>
+                        {s.status === 'suspended' ? (
+                          <GhostButton onClick={() => toggleSuspend(s.uid, false)}>Reactivate</GhostButton>
+                        ) : (
+                          <GhostButton onClick={() => toggleSuspend(s.uid, true)}>Suspend</GhostButton>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -115,6 +155,7 @@ export function UsersPage() {
           </table>
         </TableWrap>
       )}
+      {editShop ? <ShopFeaturePanel shop={editShop} onClose={() => setEditShop(null)} /> : null}
     </div>
   );
 }

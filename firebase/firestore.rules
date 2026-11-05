@@ -141,6 +141,17 @@ service cloud.firestore {
       return isShopOwner(uid) || memberBranch(uid) == 'all' || memberBranch(uid) == branchId;
     }
 
+    /** May this login read a row of that branch? Staff tied to one branch see only theirs. */
+    function canReadBranch(uid, branchId) {
+      return isShopOwner(uid) || (isShopMember(uid) && (memberBranch(uid) == 'all' || memberBranch(uid) == branchId));
+    }
+
+    /** Owner only, once: stamping the main branch on a row from before branches. */
+    function stampingBranch() {
+      return !('branchId' in resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['branchId']);
+    }
+
     /** Staff writes to the shop profile: invoice counter and the shop-wide day marks only. */
     function staffProfileWrite(uid) {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
@@ -235,7 +246,7 @@ service cloud.firestore {
 
       // One branch on one day: its opening balance and close mark (document id `${branchId}_${day}`).
       match /branchDays/{dayId} {
-        allow read: if isShopActor(uid);
+        allow read: if canReadBranch(uid, resource.data.branchId);
         allow delete: if false;
         allow create: if isShopActor(uid)
           && dayId == request.resource.data.branchId + '_' + request.resource.data.day
@@ -257,7 +268,7 @@ service cloud.firestore {
       }
 
       match /sales/{saleId} {
-        allow read: if isShopActor(uid);
+        allow read: if canReadBranch(uid, resource.data.get('branchId', ''));
         allow delete: if actorCan(uid, 'editSale');
         allow create: if actorCan(uid, 'addSale')
           && shopCanFeature(uid, 'addSale')
@@ -273,11 +284,12 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['note', 'customerName', 'customerPhone', 'paymentMode', 'createdAt', 'editedAt'])
             && request.resource.data.createdAt is timestamp)
           || (actorCan(uid, 'collectCredit')
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settled']));
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settled']))
+          || (isShopOwner(uid) && stampingBranch());
       }
 
       match /expenses/{expenseId} {
-        allow read: if isShopActor(uid);
+        allow read: if canReadBranch(uid, resource.data.get('branchId', ''));
         allow delete: if actorCan(uid, 'addExpense');
         allow create: if actorCan(uid, 'addExpense')
           && branchAllowed(uid, request.resource.data.get('branchId', ''))
@@ -288,7 +300,7 @@ service cloud.firestore {
           && request.resource.data.category.size() > 0
           && request.resource.data.category.size() < 80
           && request.resource.data.createdAt is timestamp;
-        allow update: if false;
+        allow update: if isShopOwner(uid) && stampingBranch();
       }
 
       match /products/{productId} {
@@ -318,19 +330,22 @@ service cloud.firestore {
       }
 
       match /savedOrders/{orderId} {
-        allow read, delete: if isShopActor(uid);
+        allow read, delete: if canReadBranch(uid, resource.data.get('branchId', ''));
         allow create: if actorCan(uid, 'addSale')
+          && branchAllowed(uid, request.resource.data.get('branchId', ''))
           && shopCanFeature(uid, 'addSale')
           && request.resource.data.savedAt is timestamp
           && request.resource.data.total is number
           && request.resource.data.total > 0;
-        allow update: if false;
+        allow update: if isShopOwner(uid) && stampingBranch();
       }
 
       // Staff membership for this shop (owner manages; all shop actors can list for sync).
       // A switched-off login may still read its own row, so the app can sign it out.
       match /members/{memberId} {
-        allow read: if isShopActor(uid) || (isSignedIn() && request.auth.uid == memberId);
+        allow read: if isShopOwner(uid)
+          || (isSignedIn() && request.auth.uid == memberId)
+          || (isShopMember(uid) && memberBranch(uid) == 'all');
         allow create, update: if isShopOwner(uid);
         allow delete: if isShopOwner(uid);
       }
@@ -364,13 +379,46 @@ service cloud.firestore {
           && shopCanFeature(uid, 'manageProducts');
       }
 
-      match /stockMoves/{moveId} {
-        allow read: if isShopActor(uid);
+      // One item at one branch. Changes in the same transaction as its ledger movement.
+      match /stock/{rowId} {
+        // A sale's transaction also reads rows that do not exist yet (first sale before a delivery).
+        allow get: if isShopActor(uid) && (resource == null || canReadBranch(uid, resource.data.branchId));
+        allow list: if canReadBranch(uid, resource.data.branchId);
+        // Owner/manager may clear rows when reloading the kitchen catalog (Mr Chef list).
         allow delete: if actorCan(uid, 'manageStock');
-        allow create, update: if isShopActor(uid)
+        allow create: if rowId == request.resource.data.branchId + '_' + request.resource.data.itemId
+          && request.resource.data.keys().hasOnly(['branchId', 'itemId', 'qty', 'avgCost'])
+          && request.resource.data.qty is number
+          && request.resource.data.avgCost is number
+          && branchAllowed(uid, request.resource.data.branchId)
+          && (actorCan(uid, 'manageStock')
+            // A sale before the first delivery starts the row below zero; a return can start it above.
+            || (actorCan(uid, 'addSale') && request.resource.data.qty < 0 && request.resource.data.avgCost == 0)
+            || (actorCan(uid, 'editSale') && request.resource.data.avgCost == 0));
+        allow update: if request.resource.data.branchId == resource.data.branchId
+          && request.resource.data.itemId == resource.data.itemId
+          && request.resource.data.keys().hasOnly(['branchId', 'itemId', 'qty', 'avgCost'])
+          && request.resource.data.qty is number
+          && branchAllowed(uid, resource.data.branchId)
+          && (actorCan(uid, 'manageStock')
+            // Selling only takes stock away, and a returned bill only puts it back.
+            || (actorCan(uid, 'addSale')
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qty'])
+              && request.resource.data.qty < resource.data.qty)
+            || (actorCan(uid, 'editSale')
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['qty'])
+              && request.resource.data.qty > resource.data.qty));
+      }
+
+      // The stock ledger: append only. A correction is a new movement (a count), never an edit.
+      match /stockMoves/{moveId} {
+        allow read: if canReadBranch(uid, resource.data.branchId);
+        allow update, delete: if false;
+        allow create: if branchAllowed(uid, request.resource.data.get('branchId', ''))
           && (
             (actorCan(uid, 'manageStock') && shopCanFeature(uid, 'manageProducts'))
-            || (actorCan(uid, 'addSale') && shopCanFeature(uid, 'addSale'))
+            || (actorCan(uid, 'addSale') && shopCanFeature(uid, 'addSale') && request.resource.data.type == 'sale')
+            || (actorCan(uid, 'editSale') && request.resource.data.type == 'saleReturn')
           );
       }
 
@@ -395,7 +443,7 @@ service cloud.firestore {
       }
 
       match /creditPayments/{paymentId} {
-        allow read: if isShopActor(uid);
+        allow read: if canReadBranch(uid, resource.data.get('branchId', ''));
         allow create: if actorCan(uid, 'collectCredit')
           && branchAllowed(uid, request.resource.data.get('branchId', ''))
           && shopCanFeature(uid, 'addSale');
@@ -403,13 +451,15 @@ service cloud.firestore {
       }
 
       match /returns/{returnId} {
-        allow read: if isShopActor(uid);
-        allow create: if actorCan(uid, 'editSale') && shopCanFeature(uid, 'addSale');
+        allow read: if canReadBranch(uid, resource.data.get('branchId', ''));
+        allow create: if actorCan(uid, 'editSale')
+          && branchAllowed(uid, request.resource.data.get('branchId', ''))
+          && shopCanFeature(uid, 'addSale');
         allow update, delete: if isShopOwner(uid) || isShopManager(uid);
       }
 
       match /audit/{entryId} {
-        allow read: if isShopOwner(uid) || isShopManager(uid);
+        allow read: if isShopOwner(uid) || (isShopManager(uid) && memberBranch(uid) == 'all');
         allow create: if isShopActor(uid);
         allow update, delete: if false;
       }

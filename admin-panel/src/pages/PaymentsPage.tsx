@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Card,
   EmptyState,
@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useCollection } from '../hooks/useCollection';
+import { pickCurrentPlans } from '../lib/currentPlans';
 import { mapPayment, mapPlan, mapShop } from '../lib/mappers';
 import { recordPayment } from '../lib/shopOps';
 import { formatDateTime, formatRs } from '../lib/format';
@@ -30,11 +31,18 @@ export function PaymentsPage() {
   });
 
   const shopOptions = useMemo(() => shops.filter((s) => s.status !== 'rejected'), [shops]);
+  const currentPlans = useMemo(() => pickCurrentPlans(plans), [plans]);
+
+  useEffect(() => {
+    if (!form.plan && currentPlans[0]) {
+      setForm((f) => ({ ...f, plan: currentPlans[0].id, amount: String(currentPlans[0].price) }));
+    }
+  }, [currentPlans, form.plan]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!admin) return;
-    const plan = plans.find((p) => p.id === form.plan || p.name === form.plan);
+    const plan = currentPlans.find((p) => p.id === form.plan || p.name === form.plan);
     const planDays = plan?.days ?? 30;
     try {
       await recordPayment(admin.uid, {
@@ -46,7 +54,13 @@ export function PaymentsPage() {
         planDays,
       });
       push('Payment recorded & subscription extended');
-      setForm({ uid: '', plan: '', amount: '', method: 'cash', reference: '' });
+      setForm({
+        uid: '',
+        plan: currentPlans[0]?.id ?? '',
+        amount: currentPlans[0] ? String(currentPlans[0].price) : '',
+        method: 'cash',
+        reference: '',
+      });
     } catch (err) {
       push(err instanceof Error ? err.message : 'Save failed', 'error');
     }
@@ -68,13 +82,16 @@ export function PaymentsPage() {
 
   return (
     <div>
-      <PageTitle title="Payments" subtitle="Record payments and export CSV" />
+      <PageTitle
+        title="Payments"
+        subtitle="Record cash / bank / eZ Cash. Plan list = Basic + Standard only (old plans filtered out)."
+      />
       <Card className="mb-6">
-        <h2 className="text-base font-semibold">Record a payment</h2>
+        <h2 className="text-base font-bold">Record a payment</h2>
         <form onSubmit={submit} className="mt-4 grid gap-3 md:grid-cols-2">
           <select
             required
-            className="rounded-lg border border-line px-3 py-2 text-sm"
+            className="rounded-2xl border border-line px-3 py-2 text-sm"
             value={form.uid}
             onChange={(e) => setForm((f) => ({ ...f, uid: e.target.value }))}
           >
@@ -87,12 +104,20 @@ export function PaymentsPage() {
           </select>
           <select
             required
-            className="rounded-lg border border-line px-3 py-2 text-sm"
+            className="rounded-2xl border border-line px-3 py-2 text-sm"
             value={form.plan}
-            onChange={(e) => setForm((f) => ({ ...f, plan: e.target.value }))}
+            onChange={(e) => {
+              const id = e.target.value;
+              const p = currentPlans.find((x) => x.id === id);
+              setForm((f) => ({
+                ...f,
+                plan: id,
+                amount: p ? String(p.price) : f.amount,
+              }));
+            }}
           >
             <option value="">Plan</option>
-            {plans.map((p) => (
+            {currentPlans.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} — {formatRs(p.price)} / {p.days}d
               </option>
@@ -102,12 +127,12 @@ export function PaymentsPage() {
             required
             type="number"
             placeholder="Amount (Rs)"
-            className="rounded-lg border border-line px-3 py-2 text-sm"
+            className="rounded-2xl border border-line px-3 py-2 text-sm"
             value={form.amount}
             onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
           />
           <select
-            className="rounded-lg border border-line px-3 py-2 text-sm"
+            className="rounded-2xl border border-line px-3 py-2 text-sm"
             value={form.method}
             onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as typeof f.method }))}
           >
@@ -116,13 +141,17 @@ export function PaymentsPage() {
             <option value="ezcash">eZ Cash</option>
           </select>
           <input
-            className="md:col-span-2 rounded-lg border border-line px-3 py-2 text-sm"
+            className="md:col-span-2 rounded-2xl border border-line px-3 py-2 text-sm"
             placeholder="Reference / receipt no."
             value={form.reference}
             onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))}
           />
           <PrimaryButton type="submit">Save payment</PrimaryButton>
         </form>
+        <p className="mt-3 text-xs text-muted">
+          Full activate with feature ticks → <strong>Subscriptions</strong>. Per-shop customize →{' '}
+          <strong>Manage Shops</strong>.
+        </p>
       </Card>
       <div className="mb-3 flex justify-end">
         <GhostButton onClick={exportCsv}>Export CSV</GhostButton>

@@ -1,21 +1,35 @@
 @import 'tailwindcss';
 
+/* KadaBook APK tokens — same palette as src/theme/colors.ts */
 @theme {
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --color-canvas: #faf9f5;
+  --color-canvas: #f2f5fb;
   --color-surface: #ffffff;
-  --color-muted-bg: #f4f6fa;
+  --color-muted-bg: #f2f5fb;
+  --color-gradient-top: #e8f1ff;
   --color-ink: #111827;
   --color-muted: #5b6472;
   --color-brand: #1d5fe0;
-  --color-brand-soft: #f0f6ff;
-  --color-sidebar: #0f172a;
-  --color-sidebar-muted: #cbd5e1;
-  --color-line: #e5e7eb;
-  --color-warn: #fef3c7;
-  --color-warn-ink: #92400e;
+  --color-brand-soft: #e8f1ff;
+  --color-sidebar: #1d5fe0;
+  --color-sidebar-deep: #1546a8;
+  --color-sidebar-muted: #bbd3ff;
+  --color-line: #d5dbe5;
+  --color-hairline: #e5e7eb;
+  --color-keypad: #eef0f4;
+  --color-warn: #fff7ed;
+  --color-warn-ink: #c2410c;
   --color-danger: #e5484d;
-  --color-sale: #14733d;
+  --color-sale: #1f9d55;
+  --color-sale-text: #14733d;
+  --color-sale-wash: #e6f6ec;
+  --color-expense: #d92d3a;
+  --color-expense-wash: #fde8e8;
+  --color-product: #6b4fd3;
+  --color-profit: #1546a8;
+  --color-on-fill: #ffffff;
+  --color-bar-yellow: #f5b731;
+  --color-bar-orange: #f07a2a;
 }
 
 @layer base {
@@ -25,9 +39,67 @@
   }
   body {
     @apply m-0 min-h-screen;
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #e8f1ff 0%, transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, #e6f6ec 0%, transparent 45%),
+      var(--color-canvas);
   }
   ::selection {
-    background: color-mix(in srgb, var(--color-brand) 25%, white);
+    background: color-mix(in srgb, var(--color-brand) 28%, white);
+  }
+}
+
+@layer utilities {
+  .apk-card {
+    border-radius: 16px;
+    border: 1px solid var(--color-hairline);
+    background: var(--color-surface);
+    box-shadow: 0 8px 24px rgba(17, 24, 39, 0.05);
+  }
+  .apk-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .apk-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 40%,
+      rgba(255, 255, 255, 0.28) 50%,
+      transparent 60%
+    );
+    transform: translateX(-120%) skewX(-12deg);
+    animation: apk-shimmer 4.2s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .apk-fade-up {
+    animation: apk-fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .apk-press:active {
+    transform: scale(0.98);
+  }
+}
+
+@keyframes apk-shimmer {
+  0%,
+  55% {
+    transform: translateX(-120%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(160%) skewX(-12deg);
+  }
+}
+
+@keyframes apk-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -39,5 +111,8 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  .apk-shimmer::after {
+    display: none;
   }
 }

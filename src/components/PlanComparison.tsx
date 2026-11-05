@@ -4,7 +4,9 @@ import { useTheme } from '../context/ThemeContext';
 import {
   FEATURE_STATUS,
   FEATURE_TITLE,
-  TIER_FEATURES,
+  STANDARD_FEATURES,
+  BASIC_FEATURES,
+  ALL_FEATURES,
   TIER_LABEL,
   type Tier,
   type TierFeature,
@@ -14,18 +16,24 @@ import { fonts } from '../theme/fonts';
 
 export function PlanComparison() {
   const { colors } = useTheme();
-  const { tier: current } = useTier();
+  const { tier: current, grandfather } = useTier();
   const [open, setOpen] = useState(false);
-  const tiers: Tier[] = ['basic', 'pro', 'premium'];
-  const features: TierFeature[] = TIER_FEATURES.premium;
+  const tiers: Tier[] = ['basic', 'pro'];
+  const features: TierFeature[] = ALL_FEATURES.filter((f) => FEATURE_STATUS[f] === 'live' || BASIC_FEATURES.includes(f) || STANDARD_FEATURES.includes(f));
 
-  function cell(_tier: Tier, _feature: TierFeature) {
-    return '✓';
+  function cell(tier: Tier, feature: TierFeature) {
+    if (tier === 'basic') return BASIC_FEATURES.includes(feature) ? '✓' : '—';
+    return STANDARD_FEATURES.includes(feature) ? '✓' : '+';
   }
 
   return (
     <View style={[styles.card, { borderColor: colors.hairline, backgroundColor: colors.white }]}>
       <Text style={[styles.title, { color: colors.ink }]}>What each plan includes</Text>
+      {grandfather ? (
+        <Text style={[styles.note, { color: colors.muted }]}>
+          Your shop currently has all features active. Admin can customize later.
+        </Text>
+      ) : null}
       <View style={[styles.row, styles.head, { borderBottomColor: colors.rowLine }]}>
         <Text style={[styles.featureCol, styles.headText, { color: colors.muted }]}>Feature</Text>
         {tiers.map((tier) => (
@@ -37,7 +45,7 @@ export function PlanComparison() {
           </Text>
         ))}
       </View>
-      {(open ? features : features.slice(0, 5)).map((feature) => (
+      {(open ? features : features.slice(0, 6)).map((feature) => (
         <View key={feature} style={[styles.row, { borderBottomColor: colors.rowLine }]}>
           <View style={styles.featureCol}>
             <Text style={[styles.featureText, { color: colors.ink }]}>{FEATURE_TITLE[feature]}</Text>
@@ -62,15 +70,15 @@ export function PlanComparison() {
           })}
         </View>
       ))}
-      {features.length > 5 ? (
+      {features.length > 6 ? (
         <Pressable onPress={() => setOpen((v) => !v)} style={styles.toggle}>
           <Text style={[styles.toggleText, { color: colors.brand }]}>
-            {open ? 'Show less' : `Show all ${features.length} features`}
+            {open ? 'Show less' : `Show all ${features.length} features (+ = add-on)`}
           </Text>
         </Pressable>
       ) : null}
       <Text style={[styles.note, { color: colors.muted }]}>
-        Paid plans get new features as they are released.
+        Standard add-ons (kitchen, staff, branches…) are priced separately and added by admin.
       </Text>
     </View>
   );

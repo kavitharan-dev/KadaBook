@@ -1,16 +1,28 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { PlanComparison } from '../components/PlanComparison';
 import { SettingsRow } from '../components/SettingsRow';
-import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
+import { Field, FillButton, Header, Screen } from '../components/ui';
 import { useI18n } from '../context/LocaleContext';
 import { useShopGate } from '../context/ShopGateContext';
 import { useTheme } from '../context/ThemeContext';
 import { getFirestoreDb } from '../firebase/client';
 import { formatDay, formatRs } from '../lib/format';
 import { loadReceiptSettings, saveReceiptSettings, type ReceiptSettings } from '../lib/receiptSettings';
+import {
+  ALL_FEATURES,
+  BASIC_FEATURES,
+  DEFAULT_FEATURE_PRICE,
+  DEFAULT_PLAN_PRICE,
+  FEATURE_TITLE,
+  STANDARD_FEATURES,
+  TIER_LABEL,
+  type Tier,
+  type TierFeature,
+} from '../lib/tiers';
+import { useTier } from '../lib/useTier';
 import { fonts } from '../theme/fonts';
 
 export function SettingsMenuScreen() {
@@ -126,120 +138,207 @@ export function ThemeSettingsScreen() {
   );
 }
 
-// Admin panel plans live in this Firestore collection. Change the name if yours differs.
-const PLANS_COLLECTION = 'plans';
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RENEW_WINDOW_DAYS = 14;
 
-type AdminPlan = { id: string; name: string; price: number; days: number; active: boolean };
+type BasePlanKey = 'basic' | 'pro';
 
 export function UpgradePlanScreen() {
   const navigation = useNavigation();
   const { t } = useI18n();
   const { colors } = useTheme();
-  const { openRenewWhatsApp, subscription, status, profile } = useShopGate();
-  const [plans, setPlans] = useState<AdminPlan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { openRenewWhatsApp, subscription, profile } = useShopGate();
+  const { tier, grandfather, has } = useTier();
+  const [prices, setPrices] = useState<Record<TierFeature, number>>({ ...DEFAULT_FEATURE_PRICE });
+  const [base, setBase] = useState<BasePlanKey>('pro');
+  const [enabled, setEnabled] = useState<Set<TierFeature>>(() => new Set(STANDARD_FEATURES));
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
-    getDocs(collection(getFirestoreDb(), PLANS_COLLECTION))
+    getDoc(doc(getFirestoreDb(), 'appConfig', 'featureCatalog'))
       .then((snap) => {
         if (!alive) return;
-        const list: AdminPlan[] = snap.docs
-          .map((d) => {
-            const x = d.data() as Record<string, unknown>;
-            return {
-              id: d.id,
-              name: String(x.name ?? x.label ?? x.title ?? d.id),
-              price: Number(x.price ?? x.priceRs ?? x.amount ?? 0),
-              days: Number(x.days ?? x.durationDays ?? x.duration ?? 0),
-              active: x.active !== false,
-            };
-          })
-          .filter((p) => p.active && p.price > 0) // hides Free trial
-          .sort((a, b) => a.price - b.price);
-        setPlans(list);
+        const raw = (snap.data()?.prices ?? {}) as Record<string, unknown>;
+        const next = { ...DEFAULT_FEATURE_PRICE };
+        for (const key of ALL_FEATURES) {
+          if (typeof raw[key] === 'number' && Number.isFinite(raw[key])) next[key] = Number(raw[key]);
+        }
+        setPrices(next);
       })
-      .catch(() => {
-        if (alive) setError('Could not load plans. Check internet and try again.');
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, []);
 
+  // Prefill from live subscription without changing unlock (safe — request only via WhatsApp).
+  useEffect(() => {
+    const fromSub: BasePlanKey = subscription?.tier === 'basic' ? 'basic' : 'pro';
+    setBase(fromSub);
+    if (subscription?.featuresConfigured && Array.isArray(subscription.enabledFeatures)) {
+      const list = subscription.enabledFeatures.filter((f): f is TierFeature =>
+        (ALL_FEATURES as string[]).includes(f),
+      );
+      setEnabled(new Set(list.length ? list : fromSub === 'basic' ? BASIC_FEATURES : STANDARD_FEATURES));
+    } else if (grandfather) {
+      // Live shops: show everything ticked (matches current unlock).
+      setEnabled(new Set(ALL_FEATURES));
+    } else {
+      setEnabled(new Set(fromSub === 'basic' ? BASIC_FEATURES : STANDARD_FEATURES));
+    }
+  }, [subscription?.tier, subscription?.featuresConfigured, subscription?.enabledFeatures, grandfather]);
+
+  const included = base === 'basic' ? BASIC_FEATURES : STANDARD_FEATURES;
+  const planPrice = DEFAULT_PLAN_PRICE[base];
+  const total = useMemo(() => {
+    const includedSet = new Set(included);
+    let addons = 0;
+    for (const f of enabled) {
+      if (includedSet.has(f)) continue;
+      addons += Math.max(0, prices[f] ?? DEFAULT_FEATURE_PRICE[f] ?? 0);
+    }
+    return Math.round(planPrice + addons);
+  }, [enabled, included, planPrice, prices]);
+
   const expiresAt = subscription?.expiresAt ?? 0;
   const daysLeft = expiresAt ? Math.ceil((expiresAt - Date.now()) / DAY_MS) : 0;
 
-  // Cheapest ~monthly plan is the baseline for "save x%" on longer plans.
-  const monthlyBase = plans
-    .filter((p) => p.days > 0 && p.days <= 31)
-    .reduce<number | null>((min, p) => (min === null || p.price < min ? p.price : min), null);
-
-  function deal(p: AdminPlan) {
-    if (!monthlyBase || p.days < 60) return null;
-    const perMonth = Math.round((p.price / p.days) * 30);
-    const save = Math.round((1 - perMonth / monthlyBase) * 100);
-    return save > 0 ? { perMonth, save } : null;
+  function pickPlan(next: BasePlanKey) {
+    setBase(next);
+    setEnabled((prev) => {
+      const nextSet = new Set(prev);
+      for (const f of next === 'basic' ? BASIC_FEATURES : STANDARD_FEATURES) nextSet.add(f);
+      return nextSet;
+    });
   }
 
-  function isCurrent(p: AdminPlan) {
-    if (status !== 'active' || !subscription) return false;
-    const current = subscription.plan.toLowerCase();
-    return current === p.id.toLowerCase() || current === p.name.toLowerCase();
+  function toggle(feature: TierFeature) {
+    const inPlan = included.includes(feature);
+    // Plan-included stay on (can request remove via WhatsApp by unticking extras only;
+    // allow untick of included too so shop can ask for a leaner pack).
+    setEnabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(feature)) {
+        if (inPlan && [...next].filter((f) => included.includes(f)).length <= 1) return prev;
+        next.delete(feature);
+      } else next.add(feature);
+      return next;
+    });
   }
 
-  function buyNow(p: AdminPlan, renew: boolean) {
+  function activate() {
     const shop = profile?.shopName ?? '-';
     const phone = profile?.phone ?? '-';
-    openRenewWhatsApp(
-      `${renew ? 'Hi, I want to renew my KadaBook plan.' : 'Hi, I want to activate a plan in KadaBook.'}\n\nPlan: ${p.name}\nPrice: ${formatRs(p.price)}\nDuration: ${p.days} days\nShop: ${shop}\nPhone: ${phone}`,
-    );
-    setNotice('Send the WhatsApp message. Your plan will be activated after payment.');
+    const selected = ALL_FEATURES.filter((f) => enabled.has(f));
+    const addons = selected.filter((f) => !included.includes(f));
+    const addonLines = addons
+      .map((f) => `  • ${FEATURE_TITLE[f]} (+${formatRs(prices[f] ?? DEFAULT_FEATURE_PRICE[f])})`)
+      .join('\n');
+    const msg = [
+      'Hi, I want to activate / update my KadaBook plan.',
+      '',
+      `Plan: ${TIER_LABEL[base]}`,
+      `Plan amount: ${formatRs(planPrice)} / month`,
+      addons.length ? `Add-ons:\n${addonLines}` : 'Add-ons: none',
+      `Total: ${formatRs(total)} / month`,
+      '',
+      `Features (${selected.length}): ${selected.map((f) => FEATURE_TITLE[f]).join(', ')}`,
+      '',
+      `Shop: ${shop}`,
+      `Phone: ${phone}`,
+    ].join('\n');
+    openRenewWhatsApp(msg);
+    setNotice('WhatsApp opened. Send the message — admin will activate after payment.');
   }
 
   return (
     <Screen>
       <Header title={t((m) => m.settings.upgradeTitle)} onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.body}>
-        <Text style={[styles.hint, { color: colors.muted }]}>{t((m) => m.settings.upgradeHint)}</Text>
-        {loading ? <ActivityIndicator color={colors.brand} /> : null}
-        {plans.map((item) => {
-          const active = isCurrent(item);
-          const renewable = active && daysLeft <= RENEW_WINDOW_DAYS;
-          const saving = deal(item);
+        <Text style={[styles.hint, { color: colors.muted }]}>
+          Pick Basic or Standard, tick the extras you need, then Activate — WhatsApp opens to admin. Live shops stay
+          unlocked until admin saves the new pack.
+        </Text>
+
+        {expiresAt ? (
+          <Text style={[styles.planPeriod, { color: colors.saleText }]}>
+            Current: {TIER_LABEL[tier as Tier] ?? subscription?.plan ?? '—'}
+            {grandfather ? ' · all features active' : ''}
+            {' · '}
+            until {formatDay(expiresAt)}
+            {daysLeft > 0 ? ` · ${daysLeft}d left` : ''}
+          </Text>
+        ) : null}
+
+        <View style={styles.row}>
+          {([
+            { key: 'basic' as const, label: 'Basic', price: DEFAULT_PLAN_PRICE.basic, blurb: 'Quick sale' },
+            { key: 'pro' as const, label: 'Standard', price: DEFAULT_PLAN_PRICE.pro, blurb: 'Products · sale · reports · expenses' },
+          ]).map((p) => {
+            const on = base === p.key;
+            return (
+              <Pressable
+                key={p.key}
+                onPress={() => pickPlan(p.key)}
+                style={[
+                  styles.planPick,
+                  { borderColor: on ? colors.brand : colors.hairline, backgroundColor: colors.white },
+                ]}
+              >
+                <Text style={[styles.planTitle, { color: colors.ink, fontSize: 15 }]}>{p.label}</Text>
+                <Text style={[styles.planPrice, { color: colors.brand, fontSize: 18 }]}>{formatRs(p.price)}</Text>
+                <Text style={[styles.planPeriod, { color: colors.muted }]}>/ month</Text>
+                <Text style={[styles.planPeriod, { color: colors.muted }]}>{p.blurb}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={[styles.label, { color: colors.muted }]}>FEATURES (tick what you need)</Text>
+        {ALL_FEATURES.map((f) => {
+          const on = enabled.has(f);
+          const inPlan = included.includes(f);
+          const activeNow = has(f);
+          const amt = prices[f] ?? DEFAULT_FEATURE_PRICE[f];
           return (
-            <View key={item.id} style={[styles.planCard, { borderColor: colors.hairline }]}>
-              <Text style={[styles.planTitle, { color: colors.ink }]}>{item.name}</Text>
-              <Text style={[styles.planPrice, { color: colors.brand }]}>{formatRs(item.price)}</Text>
-              <Text style={[styles.planPeriod, { color: colors.muted }]}>
-                {item.days} days
-                {saving ? ` · ${formatRs(saving.perMonth)} / month · save ${saving.save}%` : ''}
-              </Text>
-              {active && expiresAt ? (
-                <Text style={[styles.planPeriod, { color: colors.saleText }]}>
-                  Active until {formatDay(expiresAt)} ·{' '}
-                  {daysLeft > 0 ? `${daysLeft} days left` : 'expires today'}
+            <Pressable
+              key={f}
+              onPress={() => toggle(f)}
+              style={[
+                styles.featureRow,
+                {
+                  borderColor: on ? colors.brand : colors.hairline,
+                  backgroundColor: on ? colors.gradientTop : colors.white,
+                },
+              ]}
+            >
+              <Text style={{ color: colors.ink, fontFamily: fonts.bold, fontSize: 16 }}>{on ? '☑' : '☐'}</Text>
+              <View style={styles.featureText}>
+                <Text style={{ color: colors.ink, fontFamily: fonts.semibold, fontSize: 14 }}>{FEATURE_TITLE[f]}</Text>
+                <Text style={{ color: colors.muted, fontFamily: fonts.regular, fontSize: 11 }}>
+                  {inPlan ? 'Included in plan' : `Add-on · ${formatRs(amt)}`}
+                  {activeNow ? ' · on now' : ''}
                 </Text>
-              ) : null}
-              <FillButton
-                label={active ? (renewable ? 'Renew' : t((m) => m.settings.currentPlan)) : t((m) => m.settings.buyNow)}
-                onPress={() => buyNow(item, active)}
-                color={active && !renewable ? colors.muted : colors.brand}
-                disabled={active && !renewable}
-              />
-            </View>
+              </View>
+              {!inPlan ? (
+                <Text style={{ color: colors.brand, fontFamily: fonts.bold, fontSize: 13 }}>+{formatRs(amt)}</Text>
+              ) : (
+                <Text style={{ color: colors.muted, fontFamily: fonts.semibold, fontSize: 12 }}>incl.</Text>
+              )}
+            </Pressable>
           );
         })}
+
+        <View style={[styles.planCard, { borderColor: colors.hairline, backgroundColor: colors.white }]}>
+          <Text style={[styles.planPeriod, { color: colors.muted }]}>
+            Plan {formatRs(planPrice)} + add-ons {formatRs(Math.max(0, total - planPrice))}
+          </Text>
+          <Text style={[styles.planPrice, { color: colors.brand }]}>{formatRs(total)} / month</Text>
+          <FillButton label={`Activate · ${formatRs(total)} / mo → WhatsApp`} onPress={activate} />
+        </View>
+
         <PlanComparison />
         {notice ? <Text style={[styles.ok, { color: colors.saleText }]}>{notice}</Text> : null}
-        <ErrorText message={error} />
       </ScrollView>
     </Screen>
   );
@@ -290,6 +389,13 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 8,
   },
+  planPick: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    padding: 12,
+    gap: 2,
+  },
   planTitle: {
     fontFamily: fonts.bold,
     fontSize: 17,
@@ -301,5 +407,18 @@ const styles = StyleSheet.create({
   planPeriod: {
     fontFamily: fonts.regular,
     fontSize: 13,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  featureText: {
+    flex: 1,
+    gap: 2,
   },
 });

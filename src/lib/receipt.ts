@@ -10,23 +10,30 @@ export function buildReceiptText(options: {
 }) {
   const { shopName, sale, settings } = options;
   const prefix = settings?.invoicePrefix ?? 'INV';
-  const invoiceLabel = sale.invoiceNo ? `${prefix}-${sale.invoiceNo}` : 'Receipt';
+  const invoiceLabel = sale.invoiceNo ? `${prefix}-${sale.invoiceNo}` : 'Bill';
+  const brand = (shopName || 'Shop').trim();
   const lines: string[] = [
-    shopName,
-    settings?.shopLine?.trim() ? settings.shopLine.trim() : '',
-    '------------------------',
+    '================================',
+    brand.toUpperCase(),
+  ];
+  if (settings?.shopLine?.trim()) lines.push(settings.shopLine.trim());
+  lines.push(
+    '================================',
     invoiceLabel,
-    formatDay(sale.createdAt),
-    formatTime(sale.createdAt),
-    '------------------------',
-  ].filter(Boolean);
+    `${formatDay(sale.createdAt)}  ${formatTime(sale.createdAt)}`,
+    '--------------------------------',
+  );
 
   if (sale.items?.length) {
     for (const item of sale.items) {
-      lines.push(`${item.name}`);
+      const name = (item.name || 'Item').trim();
+      lines.push(name);
       lines.push(`  ${item.qty} x ${formatRs(item.unitPrice)} = ${formatRs(item.lineTotal)}`);
     }
-    lines.push('------------------------');
+    lines.push('--------------------------------');
+  } else {
+    lines.push('Quick sale');
+    lines.push('--------------------------------');
   }
 
   const extra = sale as Sale & SaleExtras;
@@ -39,8 +46,8 @@ export function buildReceiptText(options: {
   if (extra.paymentMode) lines.push(`Paid by: ${PAYMENT_MODE_LABEL[extra.paymentMode]}`);
   if (extra.customerName) lines.push(`Customer: ${extra.customerName}`);
   if (extra.customerPhone) lines.push(`Phone: ${extra.customerPhone}`);
-  lines.push('');
-  lines.push(settings?.footerLine?.trim() || 'Thank you!');
+  lines.push('================================');
+  lines.push(settings?.footerLine?.trim() || `Thank you — ${brand}`);
   return lines.join('\n');
 }
 

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": true
   },
-  "exclude": ["admin-panel", "node_modules"]
+  "exclude": ["admin-panel", "node_modules", "firebase/tests"]
 }

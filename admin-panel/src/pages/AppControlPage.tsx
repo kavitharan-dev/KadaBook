@@ -36,7 +36,10 @@ export function AppControlPage() {
 
   return (
     <div>
-      <PageTitle title="App Control" subtitle="Maintenance, versions, features, trial & grace" />
+      <PageTitle
+        title="App Control"
+        subtitle="Maintenance, min version, trial/grace days, languages — not Basic/Standard plan ticks"
+      />
       <Card className="grid max-w-2xl gap-4">
         <label className="flex items-center justify-between text-sm">
           Maintenance mode

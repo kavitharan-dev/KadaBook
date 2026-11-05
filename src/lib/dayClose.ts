@@ -2,7 +2,13 @@ import { Linking, Share } from 'react-native';
 import type { Books, Expense, Product, Sale, SaleLine } from '../data/types';
 import { formatRs, formatTime, isSameDay } from './format';
 import { dayKey, openingBalanceForDay } from './dayKey';
+import {
+  buildKitchenDayCloseReportText,
+  type KitchenDayReportExtras,
+} from './kitchenDailyReport';
 import { printTextReport, type PrintResult } from './printReceipt';
+
+export type { KitchenDayReportExtras, KitchenStockRow } from './kitchenDailyReport';
 
 export const DEFAULT_QUICK_SALE_PROFIT_PERCENT = 10;
 export const STOCK_PURCHASE_CATEGORY = 'Stock Purchase';
@@ -16,11 +22,11 @@ export const STOCK_PURCHASE_CATEGORY = 'Stock Purchase';
  * quickProfit     = round(quickSales × quick% / 100)   (default 10%)
  * grossProfit     = productProfit + quickProfit
  * operatingExp    = expenses that are NOT stock purchase
- * stockPurchase   = stock purchase category (aliases matched)
+ * stockPurchase   = stock purchases and supplier payments (aliases matched)
  * totalExpenses   = operatingExp + stockPurchase
- * netProfit       = grossProfit − operatingExp         (stock NOT in P&L)
- * expectedCash    = openingCash + cashSales + creditCollected − totalExpenses
- *                 (card sales are not cash-in-drawer)
+ * netProfit       = grossProfit − operatingExp         (cost is already in product profit)
+ * expectedCash    = openingCash + cashSales + cash collected on credit
+ *                   − totalExpenses (all paid in cash)  (card never reaches the drawer)
  */
 export type DayCloseSummary = {
   dayKey: string;
@@ -34,7 +40,10 @@ export type DayCloseSummary = {
   /** Non-credit cash (not card) sales for drawer. */
   cashSales: number;
   creditSales: number;
+  /** Every credit payment taken today, cash and card. */
   creditCollected: number;
+  /** The part of it that went into the drawer: cash payments, plus cash taken on credit bills. */
+  cashCollected: number;
   stockPurchase: number;
   operatingExpenses: number;
   totalExpenses: number;
@@ -75,6 +84,8 @@ export function isStockPurchase(expense: Expense) {
   if (!raw) return false;
   if (raw === STOCK_PURCHASE_CATEGORY.toLowerCase()) return true;
   if (raw === 'stock' || raw === 'stocks' || raw === 'stock buy' || raw === 'stockbuy') return true;
+  // Paying a supplier settles stock already bought: it is not a running cost either.
+  if (raw === 'supplier payment') return true;
   if (raw.includes('stock purchase') || raw.includes('stockpurchase')) return true;
   if (raw.includes('inventory') || raw.includes('goods purchase')) return true;
   return false;
@@ -104,14 +115,14 @@ export function productProfitForSale(sale: Sale, products: Product[]) {
     const qty = Number(line.qty) || 0;
     let costEach = 0;
     if (line.unitCost != null && Number.isFinite(line.unitCost) && line.unitCost >= 0) {
-      costEach = Math.round(line.unitCost);
+      costEach = line.unitCost;
     } else {
       const product = line.productId ? products.find((row) => row.id === line.productId) : undefined;
       costEach = product ? Math.round(product.purchasePrice) || 0 : 0;
     }
     profit += lineSell(line) - costEach * qty;
   }
-  return profit;
+  return Math.round(profit);
 }
 
 export function buildDayCloseSummary(books: Books, ms: number = Date.now()): DayCloseSummary {
@@ -129,6 +140,7 @@ export function buildDayCloseSummary(books: Books, ms: number = Date.now()): Day
   let productSaleCount = 0;
   let quickSaleCount = 0;
   let creditSaleCount = 0;
+  let paidOnCreditBills = 0;
 
   for (const sale of daySales) {
     const amount = Math.round(sale.amount) || 0;
@@ -138,6 +150,7 @@ export function buildDayCloseSummary(books: Books, ms: number = Date.now()): Day
     if (isCreditSale(sale)) {
       creditSales += amount;
       creditSaleCount += 1;
+      paidOnCreditBills += Math.round(sale.paidAmount ?? 0) || 0;
       continue;
     }
     if (isCardSale(sale)) cardSales += amount;
@@ -159,13 +172,16 @@ export function buildDayCloseSummary(books: Books, ms: number = Date.now()): Day
   }
   const totalExpenses = stockPurchase + operatingExpenses;
   const creditCollected = dayCreditPayments.reduce((sum, row) => sum + (Math.round(row.amount) || 0), 0);
+  const cashCollected =
+    dayCreditPayments.filter((row) => row.method === 'cash').reduce((sum, row) => sum + (Math.round(row.amount) || 0), 0) +
+    paidOnCreditBills;
 
   const totalSales = productSales + quickSales;
   const cashSales = Math.max(0, totalSales - cardSales);
   const quickProfit = Math.round((quickSales * quickProfitPercent) / 100);
   const grossProfit = productProfit + quickProfit;
   const netProfit = grossProfit - operatingExpenses;
-  const expectedCash = openingCash + cashSales + creditCollected - totalExpenses;
+  const expectedCash = openingCash + cashSales + cashCollected - totalExpenses;
   const d = new Date(ms);
 
   return {
@@ -179,6 +195,7 @@ export function buildDayCloseSummary(books: Books, ms: number = Date.now()): Day
     cashSales,
     creditSales,
     creditCollected,
+    cashCollected,
     stockPurchase,
     operatingExpenses,
     totalExpenses,
@@ -194,7 +211,7 @@ export function buildDayCloseSummary(books: Books, ms: number = Date.now()): Day
     saleCount: daySales.length,
     expenseCount: dayExpenses.length,
     opening: openingCash,
-    todaySales: openingCash + totalSales,
+    todaySales: totalSales,
     expenses: totalExpenses,
     cashBalance: expectedCash,
     finalProfit: netProfit,
@@ -206,7 +223,15 @@ function signedProfitLabel(netProfit: number) {
   return `Net profit           ${formatRs(netProfit)}`;
 }
 
-export function buildDayCloseReportText(shopName: string, summary: DayCloseSummary, closedAt?: number | null) {
+export function buildDayCloseReportText(
+  shopName: string,
+  summary: DayCloseSummary,
+  closedAt?: number | null,
+  kitchen?: KitchenDayReportExtras | null,
+) {
+  if (kitchen) {
+    return buildKitchenDayCloseReportText(shopName, summary, kitchen, closedAt);
+  }
   const generated = new Date();
   const lines = [
     'KadaBook — Daily report',
@@ -224,25 +249,26 @@ export function buildDayCloseReportText(shopName: string, summary: DayCloseSumma
     `Credit collected     ${formatRs(summary.creditCollected)}`,
     '',
     '— Expenses —',
-    `Operating            ${formatRs(summary.operatingExpenses)}`,
-    `Stock purchase       ${formatRs(summary.stockPurchase)}`,
-    `Total expenses       ${formatRs(summary.totalExpenses)}`,
+    `Running expenses     ${formatRs(summary.operatingExpenses)}`,
+    `Stock purchases      ${formatRs(summary.stockPurchase)}`,
+    '  (stock is not taken off profit: its cost is in product profit)',
     '',
     '— Profit —',
     `Product profit       ${formatRs(summary.productProfit)}`,
     `Quick profit (${summary.quickProfitPercent}%)  ${formatRs(summary.quickProfit)}`,
     `Gross profit         ${formatRs(summary.grossProfit)}`,
-    `Operating expenses − ${formatRs(summary.operatingExpenses)}`,
+    `Running expenses   − ${formatRs(summary.operatingExpenses)}`,
     '------------------------',
     signedProfitLabel(summary.netProfit),
     '',
     '— Cash —',
     `Opening cash         ${formatRs(summary.openingCash)}`,
     `+ Cash sales         ${formatRs(summary.cashSales)}`,
-    `+ Credit collected   ${formatRs(summary.creditCollected)}`,
-    `− Total expenses     ${formatRs(summary.totalExpenses)}`,
+    `+ Cash collected     ${formatRs(summary.cashCollected)}`,
+    `− Cash expenses      ${formatRs(summary.operatingExpenses)}`,
+    `− Cash purchases     ${formatRs(summary.stockPurchase)}`,
     '------------------------',
-    `Expected cash        ${formatRs(summary.expectedCash)}`,
+    `Cash in drawer       ${formatRs(summary.expectedCash)}`,
     '',
     `${summary.saleCount} sales (${summary.productSaleCount} product · ${summary.quickSaleCount} quick · ${summary.creditSaleCount} credit) · ${summary.expenseCount} expenses`,
     `Generated: ${generated.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}, ${formatTime(generated.getTime())}`,
@@ -253,9 +279,14 @@ export function buildDayCloseReportText(shopName: string, summary: DayCloseSumma
   return lines.join('\n');
 }
 
-export async function printDayCloseReport(shopName: string, summary: DayCloseSummary, closedAt?: number | null): Promise<PrintResult> {
+export async function printDayCloseReport(
+  shopName: string,
+  summary: DayCloseSummary,
+  closedAt?: number | null,
+  kitchen?: KitchenDayReportExtras | null,
+): Promise<PrintResult> {
   const title = `Daily report — ${shopName}`;
-  return printTextReport(title, buildDayCloseReportText(shopName, summary, closedAt));
+  return printTextReport(title, buildDayCloseReportText(shopName, summary, closedAt, kitchen));
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -321,6 +352,7 @@ export type AttachedPeriodSummary = {
   weeklyProductProfit: number;
   weeklyQuickProfit: number;
   weeklyOperating: number;
+  weeklyStockPurchase: number;
   weeklyGross: number;
 };
 
@@ -340,6 +372,7 @@ export function buildAttachedPeriodSummary(
   const weeklyProductProfit = days.reduce((sum, day) => sum + day.productProfit, 0);
   const weeklyQuickProfit = days.reduce((sum, day) => sum + day.quickProfit, 0);
   const weeklyOperating = days.reduce((sum, day) => sum + day.operatingExpenses, 0);
+  const weeklyStockPurchase = days.reduce((sum, day) => sum + day.stockPurchase, 0);
   const weeklyGross = days.reduce((sum, day) => sum + day.grossProfit, 0);
   const rangeLabel =
     days.length === 0
@@ -358,6 +391,7 @@ export function buildAttachedPeriodSummary(
     weeklyProductProfit,
     weeklyQuickProfit,
     weeklyOperating,
+    weeklyStockPurchase,
     weeklyGross,
   };
 }
@@ -390,11 +424,11 @@ export function buildAttachedPeriodReportText(shopName: string, period: Attached
     '========================',
     `${salesLabel.padEnd(20)}${formatRs(period.weeklySales)}`,
     `Gross profit sum    ${formatRs(period.weeklyGross)}`,
-    `Operating sum       ${formatRs(period.weeklyOperating)}`,
-    `Total expenses sum  ${formatRs(period.weeklyExpenses)}`,
+    `Running expenses    ${formatRs(period.weeklyOperating)}`,
+    `Stock purchases     ${formatRs(period.weeklyStockPurchase)}`,
     '------------------------',
     `${finalLabel.padEnd(20)}${formatRs(period.weeklyFinal)}`,
-    `  (gross − operating; stock purchase not in net)`,
+    `  (gross − running expenses; stock purchases not in net)`,
     '========================',
     '',
     isMonth

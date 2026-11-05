@@ -34,20 +34,26 @@ import { useKitchen } from '../context/KitchenContext';
 import { useI18n } from '../context/LocaleContext';
 import { BranchChips } from '../components/kitchen/KitchenUi';
 import { BranchSalesCard } from '../components/BranchSalesCard';
+import { BranchStockCard } from '../components/BranchStockCard';
 import { scopeBooks } from '../lib/branchScope';
 import { formatRs, isSameDay, startOfDay, sum } from '../lib/format';
 import { dayClosedAt, dayKey, openingBalanceForDay } from '../lib/dayKey';
 import {
   buildDayCloseReportText,
+  buildAttachedPeriodSummary,
   buildDayCloseSummary,
+  isStockPurchase,
   printDayCloseReport,
   shareDayCloseWhatsApp,
 } from '../lib/dayClose';
+import { buildKitchenDayReportExtras } from '../lib/kitchenDailyReport';
 import { useRole } from '../lib/roles';
 import { usesKitchenStock } from '../lib/shopType';
 import { changePercent } from '../lib/stats';
 import { markOpeningPromptDay, needsOpeningBalancePrompt, readOpeningPromptDay } from '../lib/openingPrompt';
+import type { TierFeature } from '../lib/tiers';
 import { usePrintFeedback } from '../lib/usePrintFeedback';
+import { useTier } from '../lib/useTier';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { useTheme } from '../context/ThemeContext';
 import { fonts } from '../theme/fonts';
@@ -61,13 +67,24 @@ import {
   TrialChip,
 } from './GateScreens';
 
-const ACTIONS = [
-  { key: 'sale', labelKey: 'newSale' as const, gradient: gradients.green, route: 'NewSale' as const, Icon: CartDuoIcon, feature: 'addSale' as const, flag: 'sales' as const, needs: 'addSale' as const },
-  { key: 'expense', labelKey: 'addExpense' as const, gradient: gradients.orange, route: 'AddExpense' as const, Icon: ReceiptDuoIcon, feature: 'addExpense' as const, flag: 'expenses' as const, needs: 'addExpense' as const },
-  { key: 'credit', labelKey: 'creditBook' as const, gradient: gradients.teal, route: 'CreditBook' as const, Icon: BookDuoIcon, feature: 'addSale' as const, flag: 'sales' as const, needs: 'collectCredit' as const },
-  { key: 'products', labelKey: 'products' as const, gradient: gradients.purple, route: 'Products' as const, Icon: BoxDuoIcon, feature: 'manageProducts' as const, flag: 'products' as const, needs: 'manageProducts' as const },
-  { key: 'reports', labelKey: 'reports' as const, gradient: gradients.blue, route: 'Reports' as const, Icon: ChartDuoIcon, feature: 'viewReports' as const, flag: 'reports' as const, needs: 'viewReports' as const },
-] as const;
+const ACTIONS: {
+  key: string;
+  labelKey: 'newSale' | 'addExpense' | 'creditBook' | 'products' | 'reports';
+  gradient: readonly [string, string, ...string[]];
+  route: 'NewSale' | 'AddExpense' | 'CreditBook' | 'Products' | 'Reports';
+  Icon: typeof CartDuoIcon;
+  feature: 'addSale' | 'addExpense' | 'manageProducts' | 'viewReports';
+  flag: 'sales' | 'expenses' | 'products' | 'reports';
+  needs: 'addSale' | 'addExpense' | 'collectCredit' | 'manageProducts' | 'viewReports';
+  /** Plan tick(s) — any match unlocks the tile. */
+  planAny: TierFeature[];
+}[] = [
+  { key: 'sale', labelKey: 'newSale', gradient: gradients.green, route: 'NewSale', Icon: CartDuoIcon, feature: 'addSale', flag: 'sales', needs: 'addSale', planAny: ['quickSale', 'productSale'] },
+  { key: 'expense', labelKey: 'addExpense', gradient: gradients.orange, route: 'AddExpense', Icon: ReceiptDuoIcon, feature: 'addExpense', flag: 'expenses', needs: 'addExpense', planAny: ['expenses'] },
+  { key: 'credit', labelKey: 'creditBook', gradient: gradients.teal, route: 'CreditBook', Icon: BookDuoIcon, feature: 'addSale', flag: 'sales', needs: 'collectCredit', planAny: ['creditBook'] },
+  { key: 'products', labelKey: 'products', gradient: gradients.purple, route: 'Products', Icon: BoxDuoIcon, feature: 'manageProducts', flag: 'products', needs: 'manageProducts', planAny: ['products'] },
+  { key: 'reports', labelKey: 'reports', gradient: gradients.blue, route: 'Reports', Icon: ChartDuoIcon, feature: 'viewReports', flag: 'reports', needs: 'viewReports', planAny: ['fullReports'] },
+];
 
 export function HomeScreen() {
   const navigation = useNavigation<CompositeNavigationProp<
@@ -84,17 +101,21 @@ export function HomeScreen() {
   const { colors } = useTheme();
   const { canAccess, profile } = useShopGate();
   const { can, role } = useRole();
+  const { has } = useTier();
   const isCashier = role === 'cashier';
   const isOwner = role === 'owner';
-  const showKitchen = usesKitchenStock(profile?.shopType ?? user?.shopType) && can('manageStock');
+  const showKitchen =
+    usesKitchenStock(profile?.shopType ?? user?.shopType) && can('manageStock') && has('kitchenStock');
   const salesOn = useFeature('sales');
   const expensesOn = useFeature('expenses');
   const productsOn = useFeature('products');
   const reportsOn = useFeature('reports');
   const flags = { sales: salesOn, expenses: expensesOn, products: productsOn, reports: reportsOn };
-  const homeActions = ACTIONS.filter((action) => flags[action.flag] && can(action.needs));
+  const homeActions = ACTIONS.filter(
+    (action) => flags[action.flag] && can(action.needs) && action.planAny.some((f) => has(f)),
+  );
   const canCloseDay = can('closeDay');
-  const canSeeReports = can('viewReports');
+  const canSeeReports = can('viewReports') && has('fullReports');
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [openingModal, setOpeningModal] = useState(false);
   const [openingEditing, setOpeningEditing] = useState(false);
@@ -113,18 +134,28 @@ export function HomeScreen() {
   const openingToday = openingBalanceForDay(scoped.meta, now);
   const salesTodayList = scoped.sales.filter((sale) => isSameDay(sale.createdAt, now));
   const salesToday = sum(salesTodayList);
-  const todaySales = openingToday + salesToday;
+  const todaySales = salesToday;
   const yesterdaySales = sum(scoped.sales.filter((sale) => isSameDay(sale.createdAt, yesterday)));
   const percent = changePercent(todaySales, yesterdaySales);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
   const monthSaleList = scoped.sales.filter((sale) => sale.createdAt >= monthStart);
   const monthExpenseList = scoped.expenses.filter((expense) => expense.createdAt >= monthStart);
   const monthSales = sum(monthSaleList);
-  const monthExpenses = sum(monthExpenseList);
-  const monthProfit = monthSales - monthExpenses;
+  const monthRunning = monthExpenseList.filter((expense) => !isStockPurchase(expense));
+  const monthExpenses = sum(monthRunning);
+  const monthPurchases = sum(monthExpenseList) - monthExpenses;
+  // Cost is already in each bill's profit, so stock purchases must not come off again.
+  const monthProfit = useMemo(
+    () => buildAttachedPeriodSummary(scoped, { start: monthStart, end: startOfDay(now) + 24 * 60 * 60 * 1000 }, 'month').weeklyFinal,
+    [scoped, monthStart, todayKey],
+  );
   const margin = monthSales > 0 ? Math.round((monthProfit / monthSales) * 100) : 0;
   const hasToday = todaySales > 0 || scoped.expenses.some((expense) => isSameDay(expense.createdAt, now));
   const daySummary = useMemo(() => buildDayCloseSummary(scoped, now), [scoped, todayKey]);
+  const kitchenReport = useMemo(() => {
+    if (!usesKitchenStock(profile?.shopType ?? user?.shopType)) return null;
+    return buildKitchenDayReportExtras(kitchen.data, scoped, kitchen.scope, now);
+  }, [profile?.shopType, user?.shopType, kitchen.data, kitchen.scope, scoped, todayKey]);
   const closedAt = dayClosedAt(books.meta, now, dayBranch);
 
   useEffect(() => {
@@ -198,20 +229,20 @@ export function HomeScreen() {
 
   const runClosePrint = useCallback(async () => {
     const result = await closePrintFx.run(() =>
-      printDayCloseReport(user?.shopName ?? 'KadaBook', daySummary, closedAt),
+      printDayCloseReport(user?.shopName ?? 'KadaBook', daySummary, closedAt, kitchenReport),
     );
     if (!result) return;
     if (result.ok) toast.show('success', t((m) => m.reportsTab.printOk));
     else Alert.alert(t((m) => m.home.closeFailed), result.message);
-  }, [closePrintFx, closedAt, daySummary, t, toast, user?.shopName]);
+  }, [closePrintFx, closedAt, daySummary, kitchenReport, t, toast, user?.shopName]);
 
   const runCloseWhatsApp = useCallback(async () => {
-    const text = buildDayCloseReportText(user?.shopName ?? 'KadaBook', daySummary, closedAt);
+    const text = buildDayCloseReportText(user?.shopName ?? 'KadaBook', daySummary, closedAt, kitchenReport);
     const result = await closeShareFx.run(() => shareDayCloseWhatsApp(text));
     if (!result) return;
     if (result.ok) toast.show('success', t((m) => m.reportsTab.shareOk));
     else Alert.alert(t((m) => m.home.closeFailed), result.message);
-  }, [closeShareFx, closedAt, daySummary, t, toast, user?.shopName]);
+  }, [closeShareFx, closedAt, daySummary, kitchenReport, t, toast, user?.shopName]);
 
   const confirmCloseDay = useCallback(async () => {
     setCloseBusy(true);
@@ -264,6 +295,8 @@ export function HomeScreen() {
         busy={closeBusy}
         printPhase={closePrintFx.phase}
         sharePhase={closeShareFx.phase}
+        shopName={user?.shopName ?? 'KadaBook'}
+        kitchen={kitchenReport}
         onClose={() => setCloseModal(false)}
         onPrint={() => {
           void runClosePrint();
@@ -346,8 +379,8 @@ export function HomeScreen() {
             amount={todaySales}
             percent={percent}
             hint={
-              openingToday > 0
-                ? t((m) => m.home.todayOpeningNote, { opening: formatRs(openingToday), sales: formatRs(salesToday) })
+              openingToday > 0 || daySummary.expectedCash !== 0
+                ? t((m) => m.home.todayOpeningNote, { cash: formatRs(daySummary.expectedCash) })
                 : t((m) => m.home.openSalesHistory)
             }
             vsLabel={t((m) => m.home.vsYesterday)}
@@ -362,6 +395,7 @@ export function HomeScreen() {
             </View>
           ) : null}
         </View>
+        <BranchStockCard />
         {canSeeReports ? <BranchSalesCard sales={salesTodayList} branches={branches} /> : null}
         <FadeUp delay={160} style={[styles.panel, { backgroundColor: colors.white, borderColor: colors.hairline }]}>
           <View style={[styles.panelHead, { borderBottomColor: colors.hairline }]}>
@@ -432,7 +466,7 @@ export function HomeScreen() {
             glow="rgba(249,115,22,0.32)"
             label={t((m) => m.home.totalExpenses)}
             value={monthExpenses}
-            chip={t((m) => m.home.expensesCount, { count: monthExpenseList.length })}
+            chip={monthPurchases > 0 ? `Stock ${formatRs(monthPurchases)}` : t((m) => m.home.expensesCount, { count: monthRunning.length })}
             viewLabel={t((m) => m.home.view)}
             Icon={ReceiptDuoIcon}
             onPress={() => navigation.navigate('Month')}

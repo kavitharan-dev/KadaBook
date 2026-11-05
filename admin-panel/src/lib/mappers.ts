@@ -42,6 +42,13 @@ export function mapSub(id: string, d: Record<string, unknown>): Subscription {
     startsAt: ts(d.startsAt),
     expiresAt: ts(d.expiresAt),
     status: (d.status as Subscription['status']) ?? 'trial',
+    featuresConfigured: d.featuresConfigured === true,
+    enabledFeatures: Array.isArray(d.enabledFeatures)
+      ? d.enabledFeatures.filter((x): x is string => typeof x === 'string')
+      : undefined,
+    planPrice: typeof d.planPrice === 'number' ? d.planPrice : undefined,
+    monthlyTotal: typeof d.monthlyTotal === 'number' ? d.monthlyTotal : undefined,
+    tier: d.tier === 'basic' || d.tier === 'pro' || d.tier === 'premium' ? d.tier : undefined,
   };
 }
 
@@ -93,9 +100,11 @@ export function mapAudit(id: string, d: Record<string, unknown>): AuditLog {
 export function mapPlan(id: string, d: Record<string, unknown>): Plan {
   return {
     id,
-    name: String(d.name),
+    name: String(d.name ?? id),
     days: Number(d.days) || 30,
     price: Number(d.price) || 0,
+    active: d.active !== false,
+    tier: d.tier === 'basic' || d.tier === 'pro' || d.tier === 'premium' ? d.tier : undefined,
   };
 }
 

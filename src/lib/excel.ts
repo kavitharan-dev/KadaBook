@@ -87,9 +87,13 @@ export async function exportBooksToExcel(options: {
       wb,
       sheet(
         kitchen.materials.map((m) => {
-          const row: Record<string, string | number> = { Material: m.name, Unit: m.unit, 'Avg cost': m.avgCost, 'Stock (all)': levels[m.id] ?? 0 };
+          const row: Record<string, string | number> = { Item: m.name, Unit: m.unit, 'Stock (all)': levels[m.id] ?? 0 };
           for (const b of kitchen.branches) row[b.name] = stockLevels(kitchen, b.id)[m.id] ?? 0;
-          row['Stock value'] = Math.round(Math.max(0, levels[m.id] ?? 0) * m.avgCost);
+          row['Stock value'] = Math.round(
+            Object.values(kitchen.stock)
+              .filter((s) => s.itemId === m.id)
+              .reduce((sum, s) => sum + Math.max(0, s.qty) * s.avgCost, 0),
+          );
           return row;
         }),
       ),
@@ -165,6 +169,9 @@ const HEADER_ALIASES: Record<keyof ProductInput, string[]> = {
   batchNo: ['batch', 'batch no'],
   expiry: ['expiry', 'expiry date', 'exp'],
   sellKind: ['sell kind', 'sell type', 'kind', 'menu', 'simple'],
+  // Set in the app, never from a file.
+  stockItemId: [],
+  portionQty: [],
 };
 
 export type ImportPreview = {

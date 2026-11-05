@@ -95,6 +95,7 @@ export type Messages = {
     closeOperatingMinus: string;
     closeNetProfit: string;
     closeNetLoss: string;
+    closeCashCollected: string;
     closeNetProfitHint: string;
     closeOpeningCash: string;
     pickBranchFirst: string;

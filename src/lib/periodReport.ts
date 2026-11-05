@@ -1,4 +1,5 @@
 import type { Expense, Sale } from '../data/types';
+import { isStockPurchase } from './dayClose';
 import { formatDay, formatRs, formatTime, sum } from './format';
 import type { ChartBar } from './stats';
 
@@ -19,8 +20,11 @@ export function buildPeriodReportText(options: {
 }) {
   const { shopName, mode, range, sales, expenses, bars, expenseLabel } = options;
   const salesTotal = sum(sales);
-  const expenseTotal = sum(expenses);
-  const profit = salesTotal - expenseTotal;
+  const running = expenses.filter((e) => !isStockPurchase(e));
+  const expenseTotal = sum(running);
+  const purchaseTotal = sum(expenses) - expenseTotal;
+  const cost = sales.reduce((total, s) => total + (s.items ?? []).reduce((lines, l) => lines + (l.unitCost ?? 0) * l.qty, 0), 0);
+  const profit = Math.round(salesTotal - cost - expenseTotal);
 
   const periodLine =
     mode === 'daily'
@@ -34,8 +38,10 @@ export function buildPeriodReportText(options: {
     `Printed: ${formatDay(Date.now())}`,
     '========================',
     `Total sales:    ${formatRs(salesTotal)}`,
-    `Total expenses: ${formatRs(expenseTotal)}`,
+    `Cost of sales:  ${formatRs(cost)}`,
+    `Expenses:       ${formatRs(expenseTotal)}`,
     `Profit:         ${formatRs(profit)}`,
+    `Stock bought:   ${formatRs(purchaseTotal)}`,
     `Sales count:    ${sales.length}`,
     `Expense count:  ${expenses.length}`,
     '------------------------',

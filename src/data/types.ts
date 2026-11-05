@@ -46,6 +46,10 @@ export type Product = {
   expiry?: string;
   /** Missing on old rows → treat as simple unless a kitchen recipe exists. */
   sellKind?: ProductSellKind;
+  /** The stock item this product sells. Its stock is per branch and `stock` above is not used. */
+  stockItemId?: string;
+  /** How much of the stock item one sale takes (e.g. 150 g). Missing means 1. */
+  portionQty?: number;
   createdAt: number;
 };
 
@@ -106,6 +110,7 @@ export type SaleReturn = {
   items: SaleLine[];
   refundAmount: number;
   method: 'cash' | 'card' | 'credit';
+  branchId?: string;
   createdAt: number;
 };
 
@@ -128,10 +133,11 @@ export type SavedOrder = {
   kind?: 'quick' | 'bill';
   customerName?: string;
   customerPhone?: string;
+  branchId?: string;
 };
 
 /** What a draft keeps besides its lines. */
-export type DraftInfo = Pick<SavedOrder, 'kind' | 'customerName' | 'customerPhone'>;
+export type DraftInfo = Pick<SavedOrder, 'kind' | 'customerName' | 'customerPhone' | 'branchId'>;
 
 /** One branch on one day (users/{shop}/branchDays/{branchId}_{day}). */
 export type BranchDay = {
@@ -224,6 +230,8 @@ export type ProductInput = {
   batchNo?: string;
   expiry?: string;
   sellKind?: ProductSellKind;
+  stockItemId?: string;
+  portionQty?: number;
 };
 
 export type QuickSaleInput = {

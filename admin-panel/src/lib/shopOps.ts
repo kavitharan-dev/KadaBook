@@ -160,6 +160,13 @@ export type AddSubscriptionInput = {
   amount: number;
   reference?: string;
   note?: string;
+  /** New plan model — when set, app gates to these features. */
+  tier?: 'basic' | 'pro' | 'premium';
+  planPrice?: number;
+  enabledFeatures?: string[];
+  featureAmounts?: Record<string, number>;
+  monthlyTotal?: number;
+  featuresConfigured?: boolean;
 };
 
 export async function addSubscription(adminId: string, input: AddSubscriptionInput) {
@@ -186,9 +193,18 @@ export async function addSubscription(adminId: string, input: AddSubscriptionInp
     {
       plan: input.planName,
       planId: input.planId,
+      planName: input.planName,
       startsAt,
       expiresAt,
       status: subStatus,
+      ...(input.tier ? { tier: input.tier } : {}),
+      ...(typeof input.planPrice === 'number' ? { planPrice: input.planPrice } : {}),
+      ...(input.enabledFeatures ? { enabledFeatures: input.enabledFeatures } : {}),
+      ...(input.featureAmounts ? { featureAmounts: input.featureAmounts } : {}),
+      ...(typeof input.monthlyTotal === 'number' ? { monthlyTotal: input.monthlyTotal } : {}),
+      ...(input.featuresConfigured === true
+        ? { featuresConfigured: true, staffSeats: 2, branchLimit: 2 }
+        : {}),
     },
     { merge: true },
   );

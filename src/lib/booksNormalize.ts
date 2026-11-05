@@ -14,6 +14,9 @@ function normalizeProduct(raw: Product & { price?: number }): Product {
     reorderLevel: raw.reorderLevel,
     batchNo: raw.batchNo,
     expiry: raw.expiry,
+    sellKind: raw.sellKind,
+    stockItemId: raw.stockItemId,
+    portionQty: raw.portionQty,
     createdAt: raw.createdAt,
   };
 }

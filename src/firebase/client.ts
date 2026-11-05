@@ -29,6 +29,7 @@ import {
   orderBy,
   persistentLocalCache,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -36,6 +37,7 @@ import {
   where,
   writeBatch,
   type Firestore,
+  type Transaction,
 } from 'firebase/firestore';
 import { accountIdentity, assertPassword, isPhoneAuthEmail, type AuthService, type Repository } from '../data/repository';
 import type { SignUpInput } from '../data/signUpTypes';
@@ -43,6 +45,8 @@ import type { Books, BranchDay, Expense, PermissionOverrides, Product, Sale, Sal
 import { type PaymentMode, type SaleDiscount, type SaleExtras } from '../data/saleExtras';
 import { normalizeBooks } from '../lib/booksNormalize';
 import { branchDayId, dayKey as dayKeyOf } from '../lib/dayKey';
+import { planSale, planSaleReturn, productUnitCost, stockRowId, type StockPlan, type StockRows } from '../lib/stockEngine';
+import type { StockRow } from '../data/kitchenTypes';
 import { fifoSettledIds } from '../lib/shopPlus';
 import { expenseCategoriesForShop, normalizeCustomExpenseCategory } from '../lib/expenseCategories';
 import {
@@ -442,12 +446,17 @@ function watchCollection<T>(
   map: (id: string, data: Record<string, unknown>) => T,
   onRows: (rows: T[]) => void,
   onError?: (message: string) => void,
+  branchId?: string,
 ) {
-  const rowsQuery = query(collection(firestore(), 'users', uid, name), orderBy('createdAt', 'desc'));
+  const rows = collection(firestore(), 'users', uid, name);
+  // Staff tied to a branch may only ask for that branch. Sorted here: no composite index needed.
+  const rowsQuery = branchId ? query(rows, where('branchId', '==', branchId)) : query(rows, orderBy('createdAt', 'desc'));
   return onSnapshot(
     rowsQuery,
     (snap) => {
-      onRows(snap.docs.map((item) => map(item.id, item.data() as Record<string, unknown>)));
+      const mapped = snap.docs.map((item) => map(item.id, item.data() as Record<string, unknown>));
+      if (branchId) mapped.sort((a, b) => Number((b as { createdAt?: number }).createdAt ?? 0) - Number((a as { createdAt?: number }).createdAt ?? 0));
+      onRows(mapped);
     },
     (error) => onError?.(firestoreErrorMessage(error.message || 'Could not read the shop book.')),
   );
@@ -504,7 +513,7 @@ function mapSale(id: string, data: Record<string, unknown>): Sale {
         lineTotal: Number(line.lineTotal) || 0,
         unitCost:
           line.unitCost != null && Number.isFinite(Number(line.unitCost))
-            ? Math.round(Number(line.unitCost))
+            ? Math.round(Number(line.unitCost) * 100) / 100
             : undefined,
       }))
     : undefined;
@@ -535,6 +544,8 @@ function mapProduct(id: string, data: Record<string, unknown>): Product {
     batchNo: typeof data.batchNo === 'string' ? data.batchNo : undefined,
     expiry: typeof data.expiry === 'string' ? data.expiry : undefined,
     sellKind: data.sellKind === 'menu' ? 'menu' : data.sellKind === 'simple' ? 'simple' : undefined,
+    stockItemId: typeof data.stockItemId === 'string' && data.stockItemId ? data.stockItemId : undefined,
+    portionQty: Number(data.portionQty) > 0 ? Number(data.portionQty) : undefined,
     createdAt: millis(data.createdAt),
   };
 }
@@ -555,15 +566,43 @@ async function applyStockUpdates(uid: string, items: SaleLine[], products: Produ
   for (const line of items) {
     if (!line.productId) continue;
     const product = products.find((p) => p.id === line.productId);
-    if (!product || product.stock <= 0) continue;
+    if (!product || product.stockItemId || product.stock <= 0) continue;
     await updateDoc(doc(firestore(), 'users', uid, 'products', line.productId), {
       stock: Math.max(0, product.stock - line.qty),
     });
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Per-branch stock: rows and ledger always change in one transaction  */
+/* ------------------------------------------------------------------ */
+
+export async function readStockRows(tx: Transaction, uid: string, ids: string[]): Promise<StockRows> {
+  const unique = [...new Set(ids)];
+  const snaps = await Promise.all(unique.map((id) => tx.get(doc(firestore(), 'users', uid, 'stock', id))));
+  const rows: StockRows = {};
+  snaps.forEach((snap, index) => {
+    if (snap.exists()) rows[unique[index]] = snap.data() as StockRow;
+  });
+  return rows;
+}
+
+export function writeStockPlan(tx: Transaction, uid: string, plan: StockPlan) {
+  for (const [id, row] of Object.entries(plan.rows)) {
+    tx.set(doc(firestore(), 'users', uid, 'stock', id), row);
+  }
+  for (const move of plan.moves) {
+    const { createdAt, ...rest } = move;
+    tx.set(doc(collection(firestore(), 'users', uid, 'stockMoves')), defined({
+      ...rest,
+      createdAt: createdAt ? Timestamp.fromMillis(createdAt) : serverTimestamp(),
+    }));
+  }
+}
+
 export const cloudRepository: Repository = {
-  watchBooks(uid, onData, onError) {
+  watchBooks(uid, onData, onError, scope) {
+    const scopeBranch = scope?.branchId;
     let sales: Sale[] = [];
     let expenses: Expense[] = [];
     let products: Product[] = [];
@@ -646,7 +685,7 @@ export const cloudRepository: Repository = {
     const unsubSales = watchCollection<Sale>(uid, 'sales', mapSale, (rows) => {
       sales = rows;
       push();
-    }, fail);
+    }, fail, scopeBranch);
     const unsubExpenses = watchCollection<Expense>(
       uid,
       'expenses',
@@ -663,13 +702,15 @@ export const cloudRepository: Repository = {
         push();
       },
       fail,
+      scopeBranch,
     );
     const unsubProducts = watchCollection<Product>(uid, 'products', mapProduct, (rows) => {
       products = rows;
       push();
     }, fail);
 
-    const savedQuery = query(collection(firestore(), 'users', uid, 'savedOrders'), orderBy('savedAt', 'desc'));
+    const savedRows = collection(firestore(), 'users', uid, 'savedOrders');
+    const savedQuery = scopeBranch ? query(savedRows, where('branchId', '==', scopeBranch)) : query(savedRows, orderBy('savedAt', 'desc'));
     const unsubSaved = onSnapshot(
       savedQuery,
       (snap) => {
@@ -685,9 +726,11 @@ export const cloudRepository: Repository = {
               kind: data.kind === 'quick' ? 'quick' : data.kind === 'bill' ? 'bill' : undefined,
               customerName: typeof data.customerName === 'string' ? data.customerName : undefined,
               customerPhone: typeof data.customerPhone === 'string' ? data.customerPhone : undefined,
+              branchId: readBranchId(data.branchId),
             }),
           };
         });
+        if (scopeBranch) savedOrders.sort((a, b) => b.savedAt - a.savedAt);
         push();
       },
       (error) => fail(error.message),
@@ -696,7 +739,10 @@ export const cloudRepository: Repository = {
     // Enough history for the monthly report; older days are never shown.
     const oldestBranchDay = dayKeyOf(Date.now() - 62 * 24 * 60 * 60 * 1000);
     const unsubBranchDays = onSnapshot(
-      query(collection(firestore(), 'users', uid, 'branchDays'), where('day', '>=', oldestBranchDay)),
+      query(
+        collection(firestore(), 'users', uid, 'branchDays'),
+        scopeBranch ? where('branchId', '==', scopeBranch) : where('day', '>=', oldestBranchDay),
+      ),
       (snap) => {
         branchDays = Object.fromEntries(
           snap.docs.map((item) => {
@@ -712,11 +758,11 @@ export const cloudRepository: Repository = {
       (error) => fail(error.message),
     );
 
-    const listen = <T,>(name: string, map: (id: string, data: Record<string, unknown>) => T, set: (rows: T[]) => void) =>
+    const listen = <T,>(name: string, map: (id: string, data: Record<string, unknown>) => T, set: (rows: T[]) => void, branchId?: string) =>
       watchCollection(uid, name, map, (rows) => {
         set(rows);
         push();
-      }, fail);
+      }, fail, branchId);
 
     const unsubCustomers = listen('customers', (id, data) => ({
       id,
@@ -738,7 +784,7 @@ export const cloudRepository: Repository = {
       createdAt: millis(data.createdAt),
     }), (rows) => {
       creditPayments = rows;
-    });
+    }, scopeBranch);
     const unsubSuppliers = listen('suppliers', (id, data) => ({
       id,
       name: String(data.name ?? ''),
@@ -749,7 +795,7 @@ export const cloudRepository: Repository = {
       suppliers = rows;
     });
     // Staff logins (users/{shop}/members/{staffUid}).
-    const unsubStaff = listen('members', (id, data) => ({
+    const unsubStaff = !scope?.staffList ? () => {} : listen('members', (id, data) => ({
       id,
       name: String(data.name ?? ''),
       role: (data.role === 'manager' ? 'manager' : 'cashier') as StaffMember['role'],
@@ -767,11 +813,12 @@ export const cloudRepository: Repository = {
       items: Array.isArray(data.items) ? (data.items as SaleLine[]) : [],
       refundAmount: Number(data.refundAmount) || 0,
       method: (data.method === 'card' || data.method === 'credit' ? data.method : 'cash') as SaleReturn['method'],
+      branchId: readBranchId(data.branchId),
       createdAt: millis(data.createdAt),
     }), (rows) => {
       returns = rows;
-    });
-    const unsubAudit = listen('audit', (id, data) => ({
+    }, scopeBranch);
+    const unsubAudit = !scope?.auditLog ? () => {} : listen('audit', (id, data) => ({
       id,
       action: String(data.action ?? ''),
       detail: String(data.detail ?? ''),
@@ -817,7 +864,7 @@ export const cloudRepository: Repository = {
       }),
     );
   },
-  async checkoutBill(uid, input) {
+  async checkoutBill(uid, input, stock) {
     assertBillItems(input.items);
     const productDocs = await getDocs(collection(firestore(), 'users', uid, 'products'));
     const products = productDocs.docs.map((d) => mapProduct(d.id, d.data() as Record<string, unknown>));
@@ -825,18 +872,33 @@ export const cloudRepository: Repository = {
     await applyStockUpdates(uid, input.items, products);
     const priced = chargedAmount(billTotal(input.items), input.discount?.amount ?? 0);
     const { createdAt, ...extras } = input;
-    const payload = buildBillSale(input.items, invoiceNo);
-    await addDoc(
-      collection(firestore(), 'users', uid, 'sales'),
+    const saleRef = doc(collection(firestore(), 'users', uid, 'sales'));
+    const saleDoc = (items: SaleLine[]) =>
       defined({
-        ...payload,
+        ...buildBillSale(items, invoiceNo),
         ...extras,
+        items,
         subtotal: priced.subtotal,
         amount: priced.amount,
         settled: input.paymentMode === 'credit' ? false : true,
         createdAt: stamp(createdAt),
-      }),
-    );
+      });
+    if (!stock?.lines.length) {
+      await setDoc(saleRef, saleDoc(input.items));
+      return;
+    }
+    await runTransaction(firestore(), async (tx) => {
+      const rows = await readStockRows(tx, uid, stock.lines.map((l) => stockRowId(stock.branchId, l.itemId)));
+      const plan = planSale(rows, [], { branchId: stock.branchId, lines: stock.lines, refId: saleRef.id });
+      // Frozen on the line, so later cost changes never move this day's profit.
+      const items = input.items.map((line) => {
+        const product = products.find((p) => p.id === line.productId);
+        const unitCost = product ? productUnitCost(product, plan.unitCost) : undefined;
+        return unitCost === undefined ? line : { ...line, unitCost };
+      });
+      tx.set(saleRef, saleDoc(items));
+      writeStockPlan(tx, uid, plan);
+    });
   },
   async deleteSale(uid, id) {
     await deleteDoc(doc(firestore(), 'users', uid, 'sales', id));
@@ -872,6 +934,8 @@ export const cloudRepository: Repository = {
         batchNo: input.batchNo?.trim() || null,
         expiry: input.expiry?.trim() || null,
         sellKind: input.sellKind === 'menu' ? 'menu' : 'simple',
+        stockItemId: input.stockItemId || undefined,
+        portionQty: input.portionQty && input.portionQty > 0 ? input.portionQty : undefined,
         createdAt: serverTimestamp(),
       }),
     );
@@ -890,6 +954,8 @@ export const cloudRepository: Repository = {
         unit: input.unit.trim() || 'pcs',
         category: input.category.trim() || 'General',
         sellKind: input.sellKind === 'menu' ? 'menu' : 'simple',
+        ...(input.stockItemId !== undefined ? { stockItemId: input.stockItemId || deleteField() } : {}),
+        ...(input.portionQty !== undefined ? { portionQty: input.portionQty > 0 ? input.portionQty : deleteField() } : {}),
         ...(input.barcode !== undefined ? { barcode: input.barcode.trim() || null } : {}),
         ...(input.reorderLevel !== undefined ? { reorderLevel: input.reorderLevel } : {}),
         ...(input.batchNo !== undefined ? { batchNo: input.batchNo.trim() || null } : {}),
@@ -991,11 +1057,12 @@ export const cloudRepository: Repository = {
     });
     return ref.id;
   },
-  async addCreditPayment(uid, input) {
-    const [salesSnap, paidSnap] = await Promise.all([
-      getDocs(collection(firestore(), 'users', uid, 'sales')),
-      getDocs(collection(firestore(), 'users', uid, 'creditPayments')),
-    ]);
+  async addCreditPayment(uid, input, readBranchId) {
+    const scoped = (name: string) => {
+      const rows = collection(firestore(), 'users', uid, name);
+      return readBranchId ? query(rows, where('branchId', '==', readBranchId)) : rows;
+    };
+    const [salesSnap, paidSnap] = await Promise.all([getDocs(scoped('sales')), getDocs(scoped('creditPayments'))]);
     const mine = salesSnap.docs
       .map((item) => mapSale(item.id, item.data() as Record<string, unknown>))
       .filter((sale) => sale.customerId === input.customerId && sale.paymentMode === 'credit');
@@ -1079,17 +1146,26 @@ export const cloudRepository: Repository = {
       createdAt: serverTimestamp(),
     }));
   },
-  async addReturn(uid, input) {
-    const batch = writeBatch(firestore());
-    const ref = doc(collection(firestore(), 'users', uid, 'returns'));
-    batch.set(ref, { ...input, createdAt: serverTimestamp() });
-    for (const line of input.items) {
-      if (!line.productId) continue;
-      const snap = await getDoc(doc(firestore(), 'users', uid, 'products', line.productId));
-      const stock = Number(snap.data()?.stock) || 0;
-      batch.update(doc(firestore(), 'users', uid, 'products', line.productId), { stock: stock + line.qty });
-    }
-    await batch.commit();
+  async addReturn(uid, input, stock) {
+    const refs = await Promise.all(
+      input.items
+        .filter((line) => line.productId)
+        .map(async (line) => ({ line, snap: await getDoc(doc(firestore(), 'users', uid, 'products', line.productId!)) })),
+    );
+    await runTransaction(firestore(), async (tx) => {
+      const rows = stock?.lines.length
+        ? await readStockRows(tx, uid, stock.lines.map((l) => stockRowId(stock.branchId, l.itemId)))
+        : {};
+      const ref = doc(collection(firestore(), 'users', uid, 'returns'));
+      tx.set(ref, defined({ ...input, createdAt: serverTimestamp() }));
+      for (const { line, snap } of refs) {
+        if (snap.data()?.stockItemId) continue;
+        tx.update(snap.ref, { stock: (Number(snap.data()?.stock) || 0) + line.qty });
+      }
+      if (stock?.lines.length) {
+        writeStockPlan(tx, uid, planSaleReturn(rows, [], { branchId: stock.branchId, lines: stock.lines, refId: ref.id }));
+      }
+    });
   },
   async importProducts(uid, rows) {
     let count = 0;

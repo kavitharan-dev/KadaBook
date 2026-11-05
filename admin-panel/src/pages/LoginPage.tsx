@@ -44,39 +44,46 @@ export function LoginPage() {
   }, [denied, push]);
 
   return (
-    <div className="flex min-h-screen bg-canvas">
+    <div className="flex min-h-screen">
       <motion.div
         initial={reduce ? false : { opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="hidden w-[44%] flex-col justify-between bg-sidebar p-12 text-white lg:flex"
+        className="relative hidden w-[46%] flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+        style={{ background: 'linear-gradient(165deg, #1E40AF 0%, #1D5FE0 42%, #3B82F6 100%)' }}
       >
-        <div>
-          <div className="text-lg font-bold">KadaBook Admin</div>
-          <p className="mt-4 max-w-sm text-sm text-sidebar-muted">
-            Manage shop approvals, subscriptions, payments, and app settings for all KadaBook merchants.
+        <span className="pointer-events-none absolute -right-10 top-16 h-56 w-56 rounded-full bg-white/10" />
+        <span className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-white/10" />
+        <div className="relative z-[1]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-lg font-bold text-brand shadow-lg">
+            KB
+          </div>
+          <div className="mt-8 text-3xl font-bold tracking-tight">KadaBook</div>
+          <p className="mt-3 max-w-sm text-sm leading-relaxed text-white/85">
+            Admin with the same blue, soft cards, and icon actions as the shop app. Live shops stay open until you
+            Save a feature pack.
           </p>
         </div>
-        <p className="text-xs text-sidebar-muted">Design reference: KadaBook Admin Panel.html</p>
+        <p className="relative z-[1] text-xs text-white/70">APK colours · icon-first · easy handle</p>
       </motion.div>
-      <div className="flex flex-1 items-center justify-center bg-muted-bg p-6">
+      <div className="flex flex-1 items-center justify-center bg-canvas p-6">
         <motion.form
           onSubmit={submit}
           initial={reduce ? false : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-          className="w-full max-w-md rounded-[14px] border border-line bg-surface p-8 shadow-[0_8px_30px_rgba(15,23,42,0.08)]"
+          className="apk-card w-full max-w-md p-8"
         >
-          <h1 className="text-xl font-semibold">Sign in</h1>
+          <h1 className="text-xl font-bold text-ink">Sign in</h1>
           <p className="mt-1 text-sm text-muted">Admin email and password only.</p>
           {error ? (
-            <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            <p className="mt-4 rounded-2xl bg-expense-wash px-3 py-2 text-sm text-expense" role="alert">
               {error}
             </p>
           ) : null}
-          <label className="mt-6 block text-sm font-medium">
+          <label className="mt-6 block text-sm font-semibold text-ink">
             Email
             <input
-              className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="mt-1.5 w-full rounded-2xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
               type="email"
               autoComplete="username"
               value={email}
@@ -84,10 +91,10 @@ export function LoginPage() {
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium">
+          <label className="mt-4 block text-sm font-semibold text-ink">
             Password
             <input
-              className="mt-1 w-full rounded-lg border border-line px-3 py-2.5 text-sm outline-none focus:border-brand"
+              className="mt-1.5 w-full rounded-2xl border border-line bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
               type="password"
               autoComplete="current-password"
               value={password}
@@ -95,7 +102,7 @@ export function LoginPage() {
               required
             />
           </label>
-          <PrimaryButton type="submit" disabled={busy} className="mt-6 w-full">
+          <PrimaryButton type="submit" disabled={busy} className="mt-6 w-full rounded-2xl">
             {busy ? 'Signing in…' : 'Sign in'}
           </PrimaryButton>
         </motion.form>

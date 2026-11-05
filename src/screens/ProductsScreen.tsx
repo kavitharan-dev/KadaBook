@@ -32,6 +32,9 @@ import { lowStockProducts } from '../lib/stockCart';
 import { FREE_PRODUCT_LIMIT } from '../lib/tiers';
 import { useTier } from '../lib/useTier';
 import { useKitchen } from '../context/KitchenContext';
+import { MaterialSelect } from '../components/kitchen/KitchenUi';
+import { formatQty, isSellable } from '../lib/kitchenOps';
+import { itemKind } from '../lib/stockEngine';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
@@ -48,6 +51,8 @@ type Payload = {
   barcode?: string;
   reorderLevel?: number;
   sellKind: SellKind;
+  stockItemId: string;
+  portionQty: number;
 };
 
 const UNITS = ['pcs', 'kg', 'g', 'l', 'ml', 'pack', 'box'];
@@ -101,14 +106,37 @@ export function ProductsScreen() {
   const [barcode, setBarcode] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
   const [sellKind, setSellKind] = useState<SellKind>('simple');
+  const [stockItemId, setStockItemId] = useState('');
+  const [portion, setPortion] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const lowIds = useMemo(
-    () => new Set(lowStockProducts(books.products).map((p) => p.id)),
-    [books.products],
+  const sellableItems = useMemo(() => kitchen.data.materials.filter(isSellable), [kitchen.data.materials]);
+  const branchStock = useMemo(
+    () => (kitchen.activeBranchId ? kitchen.stockAt(kitchen.activeBranchId) : {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [kitchen.activeBranchId, kitchen.data.stock],
   );
+  const chosenItem = sellableItems.find((m) => m.id === stockItemId);
+
+  const lowIds = useMemo(() => {
+    if (!isKitchenShop) {
+      return new Set(lowStockProducts(books.products).map((p) => p.id));
+    }
+    // Fridge qty, not retail shelf stock (linked menu food often has shelf 0).
+    return new Set(
+      books.products
+        .filter((p) => {
+          if (!p.stockItemId) return false;
+          const qty = branchStock[p.stockItemId] ?? 0;
+          const portion = p.portionQty && p.portionQty > 0 ? p.portionQty : 1;
+          const level = p.reorderLevel && p.reorderLevel > 0 ? p.reorderLevel : portion * 5;
+          return qty > 0 && qty <= level;
+        })
+        .map((p) => p.id),
+    );
+  }, [books.products, isKitchenShop, branchStock]);
   const categories = useMemo(
     () =>
       Array.from(new Set(books.products.map((p) => (p.category || 'General').trim() || 'General'))).sort(),
@@ -148,6 +176,8 @@ export function ProductsScreen() {
     setBarcode(p?.barcode ?? '');
     setReorderLevel(p?.reorderLevel ? String(p.reorderLevel) : '');
     setSellKind(p ? effectiveSellKind(p, kitchen.data.recipes) : isKitchenShop ? 'menu' : 'simple');
+    setStockItemId(p?.stockItemId ?? '');
+    setPortion(p?.portionQty ? String(p.portionQty) : '');
     setError(null);
   }
 
@@ -195,12 +225,18 @@ export function ProductsScreen() {
       return;
     }
     const isMenuFood = isKitchenShop && sellKind === 'menu';
+    const linkedItem = isMenuFood ? sellableItems.find((m) => m.id === stockItemId) : undefined;
+    const needsPortion = linkedItem ? itemKind(linkedItem) === 'direct' : false;
+    if (needsPortion && !(Number(portion) > 0)) {
+      setError(`Enter the portion size in ${linkedItem?.unit ?? 'g'}.`);
+      return;
+    }
     const cat = category.trim();
     const payload: Payload = {
       name: name.trim(),
       sellingPrice: price,
       purchasePrice: isMenuFood ? (editing?.purchasePrice ?? 0) : Number(purchasePrice || 0),
-      // New kitchen food starts at 0 — stock comes from Kitchen → To Foods.
+      // Kitchen food keeps its stock per branch on the linked item, not here.
       stock: isMenuFood ? (editing ? editing.stock : 0) : Number(stock || 0),
       unit: isMenuFood ? unit || 'pcs' : unit,
       // Never leave kitchen food on default "General" — Recipes uses Food/menu.
@@ -213,6 +249,9 @@ export function ProductsScreen() {
           : undefined,
       // Force the Firestore flag Recipes filters on.
       sellKind: isMenuFood ? 'menu' : 'simple',
+      // Empty values clear an earlier link when a product is edited.
+      stockItemId: linkedItem?.id ?? '',
+      portionQty: needsPortion ? Number(portion) : 0,
     };
     setBusy(true);
     try {
@@ -244,14 +283,9 @@ export function ProductsScreen() {
     });
   }
 
+  // Kitchen shops sell menu food; retail keeps category filters only (no sell-kind chips).
   const chips: { key: string; label: string }[] = [
     { key: 'all', label: 'All' },
-    ...(isKitchenShop
-      ? [
-          { key: 'simple', label: 'Simple sell' },
-          { key: 'menu', label: 'Menu / Food' },
-        ]
-      : []),
     { key: 'low', label: `Low stock${lowIds.size ? ` (${lowIds.size})` : ''}` },
     ...categories.map((c) => ({ key: c, label: c })),
   ];
@@ -261,7 +295,7 @@ export function ProductsScreen() {
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
 
       <Header
-        title={t((m) => m.productsTab.title)}
+        title={isKitchenShop ? 'Menu' : t((m) => m.productsTab.title)}
         onBack={() => navigation.navigate('Home')}
         right={
           <Text style={styles.count} numberOfLines={1}>
@@ -272,7 +306,12 @@ export function ProductsScreen() {
       />
 
       <View style={styles.searchWrap}>
-        <Field value={search} onChangeText={setSearch} placeholder="Search products" autoCapitalize="none" />
+        <Field
+          value={search}
+          onChangeText={setSearch}
+          placeholder={isKitchenShop ? 'Search menu' : 'Search products'}
+          autoCapitalize="none"
+        />
       </View>
 
       <ScrollView
@@ -305,11 +344,16 @@ export function ProductsScreen() {
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           <Text style={styles.empty}>
-            {books.products.length === 0 ? t((m) => m.productsTab.empty) : 'No products match.'}
+            {books.products.length === 0
+              ? isKitchenShop
+                ? 'No food yet. Add burger, juice…'
+                : t((m) => m.productsTab.empty)
+              : 'No products match.'}
           </Text>
         }
         renderItem={({ item }) => {
           const low = lowIds.has(item.id);
+          const kind = effectiveSellKind(item, kitchen.data.recipes);
           return (
             <Pressable onPress={() => openEdit(item)} style={styles.row}>
               <View style={styles.rowMain}>
@@ -317,8 +361,17 @@ export function ProductsScreen() {
                   {item.name}
                 </Text>
                 <Text style={styles.rowMeta} numberOfLines={1}>
-                  {isKitchenShop ? `${sellKindLabel(effectiveSellKind(item, kitchen.data.recipes))} · ` : ''}
-                  {item.category || 'General'} · Stock {item.stock} {item.unit}
+                  {!isKitchenShop
+                    ? `${item.category || 'General'} · Stock ${item.stock} ${item.unit}`
+                    : kind === 'simple'
+                      ? `${sellKindLabel(kind)} · Stock ${item.stock} ${item.unit}`
+                      : item.stockItemId
+                        ? `Fridge ${formatQty(
+                            branchStock[item.stockItemId] ?? 0,
+                            kitchen.data.materials.find((m) => m.id === item.stockItemId)?.unit ?? item.unit,
+                          )}`
+                        : 'Menu only · no stock cut'
+                }
                 </Text>
               </View>
               <View style={styles.rowSide}>
@@ -335,7 +388,11 @@ export function ProductsScreen() {
       />
 
       <View style={styles.footer}>
-        <FillButton label={`+ ${t((m) => m.productsTab.add)}`} color={colors.product} onPress={openAdd} />
+        <FillButton
+          label={isKitchenShop ? '+ Add food' : `+ ${t((m) => m.productsTab.add)}`}
+          color={colors.product}
+          onPress={openAdd}
+        />
       </View>
 
       <Modal visible={formOpen} animationType="slide" transparent onRequestClose={() => setFormOpen(false)}>
@@ -364,28 +421,14 @@ export function ProductsScreen() {
                 <Text style={styles.sheetClose}>Cancel</Text>
               </Pressable>
             </View>
-            <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
-              {isKitchenShop ? (
-                <>
-                  <Text style={styles.label}>What are you adding?</Text>
-                  <View style={styles.chipRow}>
-                    {(['menu', 'simple'] as SellKind[]).map((kind) => {
-                      const on = sellKind === kind;
-                      return (
-                        <Pressable key={kind} onPress={() => setSellKind(kind)} style={[styles.chip, on && styles.chipOn]}>
-                          <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                            {kind === 'menu' ? 'Kitchen food' : 'Simple sell (bottle)'}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <Text style={styles.profit}>
-                    {sellKind === 'menu'
-                      ? 'Only name + sell price here. Recipe & stock come from Kitchen (Recipes → Produce → To Foods).'
-                      : 'Bottle / coke style: stock and purchase price stay on this form.'}
-                  </Text>
-                </>
+            <ScrollView
+              contentContainerStyle={[styles.sheetBody, { paddingBottom: 28 + (kbHeight > 0 ? 24 : 0) }]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            >
+              {/* Kitchen menu food: name, price, stock link only. Retail + kitchen simple keep full form. */}
+              {isKitchenShop && sellKind === 'menu' && !editing ? (
+                <Text style={styles.rowMeta}>Juice / sell price here. Recipe burger → Kitchen → + Food.</Text>
               ) : null}
               <Field
                 value={name}
@@ -399,6 +442,32 @@ export function ProductsScreen() {
                   placeholder="Selling price (Rs)"
                   keyboardType="number-pad"
                 />
+              ) : null}
+              {isKitchenShop && sellKind === 'menu' ? (
+                <>
+                  <Text style={styles.label}>Link stock (optional)</Text>
+                  <MaterialSelect materials={sellableItems} value={stockItemId} onChange={setStockItemId} stock={branchStock} />
+                  {stockItemId ? (
+                    <Pressable onPress={() => setStockItemId('')} hitSlop={8}>
+                      <Text style={styles.profit}>Clear link</Text>
+                    </Pressable>
+                  ) : null}
+                  {chosenItem && itemKind(chosenItem) === 'direct' ? (
+                    <Field
+                      value={portion}
+                      onChangeText={(v) => setPortion(v.replace(/[^\d.]/g, '').slice(0, 8))}
+                      placeholder={`Portion size in ${chosenItem.unit} (e.g. 150)`}
+                      keyboardType="decimal-pad"
+                    />
+                  ) : null}
+                  {editing ? (
+                    <Text style={styles.profit}>
+                      {chosenItem
+                        ? `Stock now: ${formatQty(branchStock[chosenItem.id] ?? 0, chosenItem.unit)}`
+                        : 'No link — sales still work (e.g. juice).'}
+                    </Text>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <View style={styles.twoCol}>
@@ -430,26 +499,22 @@ export function ProductsScreen() {
                     placeholder={t((m) => m.productsTab.stock)}
                     keyboardType="number-pad"
                   />
-                </>
-              )}
-              <Text style={styles.label}>{t((m) => m.productsTab.unit)}</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.chipScroll}
-                contentContainerStyle={styles.chipRow}
-              >
-                {UNITS.map((u) => {
-                  const on = unit === u;
-                  return (
-                    <Pressable key={u} onPress={() => setUnit(u)} style={[styles.chip, on && styles.chipOn]}>
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{u}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-              {!(isKitchenShop && sellKind === 'menu') ? (
-                <>
+                  <Text style={styles.label}>{t((m) => m.productsTab.unit)}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.chipScroll}
+                    contentContainerStyle={styles.chipRow}
+                  >
+                    {UNITS.map((u) => {
+                      const on = unit === u;
+                      return (
+                        <Pressable key={u} onPress={() => setUnit(u)} style={[styles.chip, on && styles.chipOn]}>
+                          <Text style={[styles.chipText, on && styles.chipTextOn]}>{u}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
                   <View style={styles.barcodeRow}>
                     <Field
                       value={barcode}
@@ -474,17 +539,13 @@ export function ProductsScreen() {
                     placeholder="Reorder when stock is at"
                     keyboardType="number-pad"
                   />
+                  <Field
+                    value={category}
+                    onChangeText={setCategory}
+                    placeholder={t((m) => m.productsTab.category)}
+                  />
                 </>
-              ) : editing ? (
-                <Text style={styles.profit}>
-                  Foods stock now: {editing.stock} {editing.unit || 'pcs'} (increases after Kitchen → To Foods)
-                </Text>
-              ) : null}
-              <Field
-                value={category}
-                onChangeText={setCategory}
-                placeholder={isKitchenShop && sellKind === 'menu' ? 'Category (e.g. Burgers)' : t((m) => m.productsTab.category)}
-              />
+              )}
               <FillButton
                 label={
                   isKitchenShop && sellKind === 'menu'

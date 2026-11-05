@@ -24,5 +24,5 @@ export function hasRecipe(productId: string, recipes: Array<Pick<Recipe, 'produc
 }
 
 export function sellKindLabel(kind: SellKind) {
-  return kind === 'menu' ? 'Menu / Food' : 'Simple sell';
+  return kind === 'menu' ? 'Food' : 'Pack / bottle';
 }

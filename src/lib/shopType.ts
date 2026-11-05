@@ -20,5 +20,5 @@ export const SHOP_TYPE_LABEL: Record<ShopType, string> = {
 
 export const SHOP_TYPE_HELP: Record<ShopType, string> = {
   retail: 'Sales, products, expenses, credit. No kitchen raw materials.',
-  kitchen: 'Everything in retail, plus Kitchen & Stock, recipes and COGS.',
+  kitchen: 'Everything in retail, plus Kitchen: buy, send, make food.',
 };

@@ -1,13 +1,12 @@
 import type { Expense, Product, Sale } from '../data/types';
-import type { KitchenData } from '../data/kitchenTypes';
-import { linesCost, recipeFor } from './kitchenOps';
+import { isStockPurchase } from './dayClose';
 
 export type ItemRow = {
   key: string;
   name: string;
   qty: number;
   revenue: number;
-  /** Cost of what was sold: recipe cost if the item has a recipe, else the product's purchase price. */
+  /** Cost of what was sold: the cost frozen on the bill line, else the product's purchase price. */
   cost: number;
   profit: number;
   marginPercent: number;
@@ -18,7 +17,7 @@ export type ItemRow = {
  * Per-item sales for bills with items. The bill discount is shared across its lines
  * by value, so item revenue adds up to what was actually charged.
  */
-export function itemReport(sales: Sale[], products: Product[], kitchen?: KitchenData): ItemRow[] {
+export function itemReport(sales: Sale[], products: Product[]): ItemRow[] {
   const rows = new Map<string, ItemRow>();
   for (const sale of sales) {
     if (!sale.items?.length) continue;
@@ -27,8 +26,7 @@ export function itemReport(sales: Sale[], products: Product[], kitchen?: Kitchen
     for (const line of sale.items) {
       const key = line.productId ?? `name:${line.name.toLowerCase()}`;
       const product = line.productId ? products.find((p) => p.id === line.productId) : undefined;
-      const recipe = kitchen ? recipeFor(line.productId, kitchen.recipes) : undefined;
-      const unitCost = recipe && kitchen ? linesCost(recipe.lines, kitchen.materials) : product?.purchasePrice ?? 0;
+      const unitCost = line.unitCost ?? product?.purchasePrice ?? 0;
       const row = rows.get(key) ?? {
         key,
         name: product?.name ?? line.name,
@@ -62,7 +60,8 @@ export function expenseBreakdown(expenses: Expense[]) {
     .sort((a, b) => b.amount - a.amount);
 }
 
-export type MonthRow = { key: string; label: string; sales: number; expenses: number; profit: number; bills: number };
+/** `expenses` are running costs; `purchases` are stock bought, shown apart and never taken off profit. */
+export type MonthRow = { key: string; label: string; sales: number; expenses: number; purchases: number; profit: number; bills: number };
 
 /** The last `count` calendar months, newest first. */
 export function monthlyReport(sales: Sale[], expenses: Expense[], count = 6, now = Date.now()): MonthRow[] {
@@ -75,13 +74,16 @@ export function monthlyReport(sales: Sale[], expenses: Expense[], count = 6, now
     const s = inMonth(sales);
     const e = inMonth(expenses);
     const salesTotal = s.reduce((sum, r) => sum + r.amount, 0);
-    const expenseTotal = e.reduce((sum, r) => sum + r.amount, 0);
+    const running = e.filter((r) => !isStockPurchase(r));
+    const expenseTotal = running.reduce((sum, r) => sum + r.amount, 0);
+    const cost = s.reduce((sum, r) => sum + (r.items ?? []).reduce((lines, l) => lines + (l.unitCost ?? 0) * l.qty, 0), 0);
     out.push({
       key: `${new Date(start).getFullYear()}-${new Date(start).getMonth()}`,
       label: new Date(start).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }),
       sales: salesTotal,
       expenses: expenseTotal,
-      profit: salesTotal - expenseTotal,
+      purchases: e.reduce((sum, r) => sum + r.amount, 0) - expenseTotal,
+      profit: Math.round(salesTotal - cost - expenseTotal),
       bills: s.length,
     });
   }

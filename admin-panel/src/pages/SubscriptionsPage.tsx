@@ -34,6 +34,11 @@ export function SubscriptionsPage() {
 
   return (
     <div>
+      <Card className="mb-6 border-brand/20 bg-brand-soft text-sm text-ink">
+        <strong>Add subscription</strong> = Basic / Standard + feature ticks only (old Free/Pro/Premium removed).
+        Per shop customize = <strong>Manage Shops</strong> → click shop. Live shops stay All ON until Save.
+        Status open/block = <strong>Access Control</strong> (not plans).
+      </Card>
       <AddSubscriptionPanel />
       <PageTitle title="Subscriptions" subtitle="Trial → active → grace → expired (data kept on expiry)" />
       <div className="mb-4 flex items-end gap-2">
@@ -55,6 +60,7 @@ export function SubscriptionsPage() {
               <tr>
                 <th className="px-4 py-3">Shop</th>
                 <th className="px-4 py-3">Plan</th>
+                <th className="px-4 py-3">Features</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Expires</th>
                 <th className="px-4 py-3">Actions</th>
@@ -63,7 +69,7 @@ export function SubscriptionsPage() {
             <tbody>
               {subs.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <EmptyState message="No subscriptions yet." />
                   </td>
                 </tr>
@@ -71,7 +77,17 @@ export function SubscriptionsPage() {
                 subs.map((s) => (
                   <tr key={s.uid} className="border-b border-line/70">
                     <td className="px-4 py-3 font-medium">{shopName(s.uid)}</td>
-                    <td className="px-4 py-3">{s.plan}</td>
+                    <td className="px-4 py-3">
+                      {s.plan}
+                      {typeof s.monthlyTotal === 'number' ? (
+                        <div className="text-xs text-muted">Rs {s.monthlyTotal}/mo</div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {s.featuresConfigured
+                        ? `${s.enabledFeatures?.length ?? 0} custom`
+                        : 'All active (not customized)'}
+                    </td>
                     <td className="px-4 py-3 capitalize">{s.status}</td>
                     <td className="px-4 py-3">{formatDate(s.expiresAt)}</td>
                     <td className="px-4 py-3">
@@ -88,8 +104,8 @@ export function SubscriptionsPage() {
         </TableWrap>
       )}
       <Card className="mt-4 text-sm text-muted">
-        Plans are managed under Firestore <code className="text-ink">plans/</code> (name, days, price). Payments
-        page activates plans when recording a payment.
+        Feature prices: <code className="text-ink">Features</code> page. Per-shop ticks: Customize panel above.
+        Until customized, live shops keep every feature unlocked.
       </Card>
     </div>
   );

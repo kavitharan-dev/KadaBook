@@ -19,6 +19,7 @@ import { assertBillItems, billTotal, stampSaleLineCosts } from '../lib/saleOps';
 import { branchDayId, dayClosedAt, dayKey, isDayClosed, openingBalanceForDay, type DayBranch } from '../lib/dayKey';
 import { formatRs } from '../lib/format';
 import { can, type Permission } from '../lib/roles';
+import { saleStockLines } from '../lib/stockEngine';
 import { customerBalance, findCustomerByPhone } from '../lib/shopPlus';
 import {
   cleanExpenseExtras,
@@ -135,6 +136,7 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         }
       }
       if (cancelled) return;
+      const lockedBranch = user.branchId && user.branchId !== ALL_BRANCHES ? user.branchId : undefined;
       unsub = repository.watchBooks(
         user.uid,
         (next) => {
@@ -145,6 +147,11 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         (message) => {
           setError(message);
           setLoading(false);
+        },
+        {
+          branchId: lockedBranch,
+          staffList: !user.role || user.role === 'owner',
+          auditLog: !lockedBranch && can(user, 'viewAudit'),
         },
       );
     })();
@@ -373,7 +380,9 @@ export function BooksProvider({ children }: { children: ReactNode }) {
         // The repository works out the bill total; it takes `discount` off that total.
         const clean = await attachCustomer(uid, extras?.customerName?.trim(), cleanSaleExtras(extras, billTotal(stamped)));
         const payload: BillCheckoutInput = { items: stamped, ...saleStamp(clean) };
-        await repository.checkoutBill(uid, payload);
+        const branchId = entryBranchId(clean.branchId);
+        const lines = saleStockLines(stamped, books.products);
+        await repository.checkoutBill(uid, payload, branchId && lines.length ? { branchId, lines } : undefined);
       },
       logAudit,
       async updateSale(id, patch) {
@@ -490,7 +499,8 @@ export function BooksProvider({ children }: { children: ReactNode }) {
       async saveOrder(items, info) {
         if (!uid) return;
         assertCan('addSale');
-        await repository.saveOrder(uid, items, info);
+        const branchId = entryBranchId(info?.branchId);
+        await repository.saveOrder(uid, items, { ...info, ...(branchId ? { branchId } : {}) });
       },
       async deleteSavedOrder(id) {
         if (!uid) return;
@@ -532,14 +542,21 @@ export function BooksProvider({ children }: { children: ReactNode }) {
           method,
           note: note?.trim() || undefined,
           branchId: entryBranchId(),
-        });
+        }, lockedBranchId);
       },
       async addReturn(input) {
         if (!uid) return;
         assertCan('editSale');
         const refund = Math.round(input.refundAmount);
         assertAmount(refund);
-        await repository.addReturn(uid, { ...input, refundAmount: refund, items: input.items });
+        const sale = books.sales.find((s) => s.id === input.saleId);
+        const branchId = entryBranchId(input.branchId ?? sale?.branchId);
+        const lines = saleStockLines(input.items, books.products);
+        await repository.addReturn(
+          uid,
+          { ...input, refundAmount: refund, items: input.items, ...(branchId ? { branchId } : {}) },
+          branchId && lines.length ? { branchId, lines } : undefined,
+        );
         logAudit('Bill returned', `Rs. ${refund} on ${input.saleId}`);
       },
       async addSupplier(input) {

@@ -1,10 +1,90 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
-import type { Branch, BranchScope, RawMaterial } from '../../data/kitchenTypes';
+import type { Branch, BranchScope, ItemKind, RawMaterial } from '../../data/kitchenTypes';
 import { formatQty } from '../../lib/kitchenOps';
+import { itemKind } from '../../lib/stockEngine';
 import { fonts } from '../../theme/fonts';
 import { ErrorText, FillButton } from '../ui';
+
+const KIND_GRADIENT: Record<ItemKind, readonly [string, string]> = {
+  raw: ['#15803D', '#22A447'],
+  finished: ['#6D28D9', '#8B5CF6'],
+  direct: ['#0F766E', '#14A38E'],
+};
+
+const KIND_MARK: Record<ItemKind, string> = {
+  raw: 'R',
+  finished: 'F',
+  direct: 'D',
+};
+
+/** Dashboard-style tappable item tiles (icon + name). */
+export function ItemIconGrid({
+  materials,
+  selectedId,
+  onSelect,
+  stock,
+}: {
+  materials: RawMaterial[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+  stock?: Record<string, number>;
+}) {
+  const { colors } = useTheme();
+  if (!materials.length) {
+    return <Text style={[styles.sub, { color: colors.muted }]}>No items yet. Load starter list, or add under Kitchen → List.</Text>;
+  }
+  return (
+    <View style={styles.iconGrid}>
+      {materials.map((m) => {
+        const kind = itemKind(m);
+        const on = selectedId === m.id;
+        const gradient = KIND_GRADIENT[kind];
+        return (
+          <Pressable
+            key={m.id}
+            onPress={() => onSelect(m.id)}
+            accessibilityRole="button"
+            accessibilityLabel={m.name}
+            style={[
+              styles.iconTile,
+              {
+                borderColor: on ? gradient[1] : colors.hairline,
+                backgroundColor: colors.white,
+              },
+            ]}
+          >
+            <LinearGradient colors={[...gradient]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.iconBadge}>
+              <Text style={styles.iconMark}>{KIND_MARK[kind]}</Text>
+            </LinearGradient>
+            <Text style={[styles.iconName, { color: colors.ink }]} numberOfLines={2}>
+              {m.name}
+            </Text>
+            {stock ? (
+              <Text style={[styles.iconStock, { color: colors.muted }]} numberOfLines={1}>
+                {formatQty(stock[m.id] ?? 0, m.unit)}
+              </Text>
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 /** Centered popup used by every kitchen form. */
 export function Sheet({
@@ -13,6 +93,8 @@ export function Sheet({
   subtitle,
   onClose,
   children,
+  /** Sticky strip under the list (qty / Add) — stays visible when an item is tapped. */
+  dock,
   actionLabel,
   onAction,
   busy,
@@ -25,6 +107,7 @@ export function Sheet({
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
+  dock?: ReactNode;
   actionLabel?: string;
   onAction?: () => void;
   busy?: boolean;
@@ -33,11 +116,41 @@ export function Sheet({
   actionDisabled?: boolean;
 }) {
   const { colors } = useTheme();
+  const { height: windowHeight } = useWindowDimensions();
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKbHeight(0);
+      return;
+    }
+    const ios = Platform.OS === 'ios';
+    const show = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', (e) =>
+      setKbHeight(e.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setKbHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [visible]);
+
+  const sheetMax = Math.max(280, Math.min(windowHeight * 0.92, windowHeight - (kbHeight || 0) - 28));
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[
+          styles.backdrop,
+          Platform.OS === 'android' && kbHeight > 0
+            ? { justifyContent: 'flex-end', paddingBottom: kbHeight }
+            : { justifyContent: 'center', paddingBottom: 16 },
+        ]}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+      >
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={[styles.card, { backgroundColor: colors.white }]}>
+        <View style={[styles.card, { backgroundColor: colors.white, maxHeight: sheetMax }]}>
           <View style={styles.head}>
             <View style={styles.flex}>
               <Text style={[styles.title, { color: colors.ink }]}>{title}</Text>
@@ -47,10 +160,16 @@ export function Sheet({
               <Text style={{ color: colors.muted, fontFamily: fonts.bold }}>✕</Text>
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={[styles.body, { paddingBottom: 12 }]}
+            style={{ flexGrow: 0, flexShrink: 1 }}
+          >
             {children}
             <ErrorText message={error ?? null} />
           </ScrollView>
+          {dock ? <View style={styles.dock}>{dock}</View> : null}
           {actionLabel && onAction ? (
             <FillButton label={actionLabel} onPress={onAction} busy={busy} color={actionColor} disabled={actionDisabled} />
           ) : null}
@@ -77,39 +196,111 @@ export function Input(props: React.ComponentProps<typeof TextInput> & { grow?: b
   );
 }
 
-export function Chip({ label, on, onPress, tone }: { label: string; on?: boolean; onPress: () => void; tone?: string }) {
+export function Chip({
+  label,
+  on,
+  onPress,
+  onLongPress,
+  tone,
+  emphasis,
+}: {
+  label: string;
+  on?: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+  tone?: string;
+  /** Filled brand look — for primary actions like Add branch. */
+  emphasis?: boolean;
+}) {
   const { colors } = useTheme();
+  const filled = Boolean(emphasis || on);
   return (
-    <Pressable onPress={onPress} style={[styles.chip, { backgroundColor: on ? tone ?? colors.brand : colors.keypad }]}>
-      <Text style={[styles.chipText, { color: on ? colors.onFill : colors.ink }]} numberOfLines={1}>
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={380}
+      style={[
+        styles.chip,
+        emphasis ? styles.chipAdd : null,
+        {
+          backgroundColor: filled ? tone ?? colors.brand : colors.keypad,
+          borderWidth: emphasis ? 0 : StyleSheet.hairlineWidth,
+          borderColor: colors.hairline,
+        },
+      ]}
+    >
+      <Text style={[styles.chipText, { color: filled ? colors.onFill : colors.ink }]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
   );
 }
 
-/** Branch switcher: "All branches" plus every branch. */
+/** Branch switcher chips; optional subtle + and × delete. Add branch UX lives on Staff & roles. */
 export function BranchChips({
   branches,
   value,
   onChange,
   allowAll = true,
   onAdd,
+  onDelete,
 }: {
   branches: Branch[];
   value: BranchScope;
   onChange: (next: BranchScope) => void;
   allowAll?: boolean;
   onAdd?: () => void;
+  /** Shows a red × on each branch (keeps at least one). */
+  onDelete?: (branchId: string) => void;
 }) {
+  const { colors } = useTheme();
+  const canDelete = Boolean(onDelete) && branches.length > 1;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-      {allowAll ? <Chip label="All branches" on={value === 'all'} onPress={() => onChange('all')} /> : null}
-      {branches.map((b) => (
-        <Chip key={b.id} label={b.isMain ? `★ ${b.name}` : b.name} on={value === b.id} onPress={() => onChange(b.id)} />
-      ))}
-      {onAdd ? <Chip label="＋ Branch" onPress={onAdd} /> : null}
-    </ScrollView>
+    <View style={styles.branchBar}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+        {allowAll && branches.length > 1 ? (
+          <Chip label="All branches" on={value === 'all'} onPress={() => onChange('all')} />
+        ) : null}
+        {branches.map((b) => {
+          const selected = value === b.id;
+          return (
+            <View
+              key={b.id}
+              style={[
+                styles.branchChipWrap,
+                {
+                  backgroundColor: selected ? colors.brand : colors.white,
+                  borderColor: selected ? colors.brand : colors.hairline,
+                },
+              ]}
+            >
+              <Pressable onPress={() => onChange(b.id)} style={styles.branchChipMain}>
+                <Text
+                  style={[styles.chipText, { color: selected ? colors.onFill : colors.ink }]}
+                  numberOfLines={1}
+                >
+                  {b.isMain ? `★ ${b.name}` : b.name}
+                </Text>
+              </Pressable>
+              {canDelete ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${b.name}`}
+                  hitSlop={8}
+                  onPress={() => onDelete?.(b.id)}
+                  style={[styles.branchDelete, { backgroundColor: selected ? 'rgba(255,255,255,0.22)' : colors.expenseWash }]}
+                >
+                  <Text style={{ color: selected ? colors.onFill : colors.danger, fontFamily: fonts.bold, fontSize: 14 }}>
+                    ×
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })}
+        {onAdd ? <Chip label="＋" on={false} onPress={onAdd} /> : null}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -194,7 +385,7 @@ export function MaterialSelect({
     <>
       <Pressable onPress={() => setOpen(true)} style={[styles.select, { borderColor: colors.line, backgroundColor: colors.white }]}>
         <Text style={[styles.selectText, { color: chosen ? colors.ink : colors.muted }]} numberOfLines={1}>
-          {chosen ? chosen.name : 'Choose material'}
+          {chosen ? chosen.name : 'Choose item'}
         </Text>
         <Text style={{ color: colors.muted }}>▾</Text>
       </Pressable>
@@ -202,10 +393,10 @@ export function MaterialSelect({
         <View style={styles.backdrop}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
           <View style={[styles.card, { backgroundColor: colors.white }]}>
-            <Input value={q} onChangeText={setQ} placeholder="Search materials" autoFocus />
+            <Input value={q} onChangeText={setQ} placeholder="Search items" autoFocus />
             <ScrollView keyboardShouldPersistTaps="handled">
               {list.length === 0 ? (
-                <Text style={[styles.sub, { color: colors.muted, padding: 12 }]}>No materials. Add one on the Stock tab.</Text>
+                <Text style={[styles.sub, { color: colors.muted, padding: 12 }]}>No items. Add under Kitchen → List.</Text>
               ) : null}
               {list.map((m) => (
                 <Pressable
@@ -219,7 +410,7 @@ export function MaterialSelect({
                 >
                   <Text style={[styles.optionName, { color: colors.ink }]}>{m.name}</Text>
                   <Text style={[styles.sub, { color: colors.muted }]}>
-                    {stock ? `${formatQty(stock[m.id] ?? 0, m.unit)} · ` : ''}Rs. {m.avgCost.toLocaleString('en-IN')}/{m.unit}
+                    {stock ? formatQty(stock[m.id] ?? 0, m.unit) : m.unit}
                   </Text>
                 </Pressable>
               ))}
@@ -339,11 +530,39 @@ const styles = StyleSheet.create({
   sub: { fontFamily: fonts.regular, fontSize: 12 },
   close: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   body: { gap: 10, paddingBottom: 4 },
+  dock: { gap: 8 },
   label: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1, marginTop: 2 },
   input: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, fontFamily: fonts.regular, fontSize: 14 },
   chip: { minHeight: 36, borderRadius: 999, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  chipAdd: {
+    minHeight: 40,
+    paddingHorizontal: 16,
+    shadowColor: '#1D5FE0',
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
   chipText: { fontFamily: fonts.semibold, fontSize: 13 },
-  chipRow: { gap: 8, paddingVertical: 2 },
+  chipRow: { gap: 8, paddingVertical: 2, paddingHorizontal: 2, alignItems: 'center' },
+  branchBar: { paddingVertical: 4 },
+  branchChipWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 40,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+  },
+  branchChipMain: { paddingLeft: 14, paddingRight: 10, paddingVertical: 8, maxWidth: 160 },
+  branchDelete: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   selectRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   selectOption: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: 10, marginTop: 4 },
   select: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -355,4 +574,27 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   remove: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
   addLine: { minHeight: 42, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+  iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  iconTile: {
+    width: '30%',
+    flexGrow: 1,
+    minWidth: 96,
+    maxWidth: 140,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconMark: { fontFamily: fonts.bold, fontSize: 16, color: '#FFFFFF' },
+  iconName: { fontFamily: fonts.semibold, fontSize: 12, textAlign: 'center', minHeight: 30 },
+  iconStock: { fontFamily: fonts.regular, fontSize: 11 },
 });

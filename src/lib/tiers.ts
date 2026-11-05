@@ -1,74 +1,63 @@
 /**
- * Plan tiers for KadaBook.
- * Basic Rs 500 / month. Pro Rs 1,000. Premium Rs 1,500.
- * Old Monthly (Rs 600) and Quarterly (Rs 1,600) shops are grandfathered into Pro.
- * Trial shops get Premium so they can try everything. Expired shops stay read-only through the status matrix.
+ * Plans: Basic (Rs 500) and Standard (Rs 1,000).
+ * Catalog = features that actually exist in the APK (no vapourware).
+ * Existing shops without featuresConfigured stay fully unlocked (grandfather).
  */
 export type Tier = 'basic' | 'pro' | 'premium';
 
+/** Only features wired in the live app. */
 export type TierFeature =
+  | 'quickSale'
+  | 'products'
+  | 'productSale'
+  | 'expenses'
+  | 'fullReports'
   | 'creditBook'
   | 'barcode'
   | 'discount'
   | 'paymentModes'
-  | 'billReturn'
-  | 'lowStockAlerts'
-  | 'reorderList'
   | 'unlimitedProducts'
-  | 'bulkImport'
-  | 'fullReports'
   | 'exportData'
-  | 'digitalReceipt'
-  | 'saleNotes'
   | 'staff'
   | 'kitchenStock'
   | 'branches'
-  | 'suppliers'
-  | 'vatInvoice'
-  | 'batchExpiry'
-  | 'cloudBackup'
-  | 'aiAssistant'
-  | 'voiceBilling'
-  | 'loyalty'
-  | 'customBranding'
-  | 'prioritySupport';
+  | 'suppliers';
 
 export const BASIC_PRODUCT_LIMIT = 100;
 export const FREE_PRODUCT_LIMIT = BASIC_PRODUCT_LIMIT;
 
-
-/** Every plan feature is open. Plans stay for billing only. */
-const ALL_FEATURES: TierFeature[] = [
+/** Admin + Upgrade Plan list order. */
+export const ALL_FEATURES: TierFeature[] = [
+  'quickSale',
+  'products',
+  'productSale',
+  'expenses',
+  'fullReports',
   'creditBook',
   'barcode',
   'discount',
   'paymentModes',
-  'billReturn',
-  'lowStockAlerts',
-  'reorderList',
   'unlimitedProducts',
-  'bulkImport',
-  'fullReports',
   'exportData',
-  'digitalReceipt',
-  'saleNotes',
   'staff',
   'kitchenStock',
   'branches',
   'suppliers',
-  'vatInvoice',
-  'batchExpiry',
-  'cloudBackup',
-  'aiAssistant',
-  'voiceBilling',
-  'loyalty',
-  'customBranding',
-  'prioritySupport',
+];
+
+export const BASIC_FEATURES: TierFeature[] = ['quickSale'];
+
+export const STANDARD_FEATURES: TierFeature[] = [
+  'quickSale',
+  'products',
+  'productSale',
+  'expenses',
+  'fullReports',
 ];
 
 export const TIER_FEATURES: Record<Tier, TierFeature[]> = {
-  basic: ALL_FEATURES,
-  pro: ALL_FEATURES,
+  basic: BASIC_FEATURES,
+  pro: STANDARD_FEATURES,
   premium: ALL_FEATURES,
 };
 
@@ -76,29 +65,57 @@ export const TIER_ORDER: Tier[] = ['basic', 'pro', 'premium'];
 
 export const TIER_LABEL: Record<Tier, string> = {
   basic: 'Basic',
-  pro: 'Pro',
-  premium: 'Premium',
+  pro: 'Standard',
+  premium: 'Custom',
 };
 
 export const TIER_PRICE_HINT: Record<Tier, string> = {
   basic: 'Rs 500 / month',
   pro: 'Rs 1,000 / month',
-  premium: 'Rs 1,500 / month',
+  premium: 'Custom',
+};
+
+export const DEFAULT_PLAN_PRICE: Record<'basic' | 'pro', number> = {
+  basic: 500,
+  pro: 1000,
+};
+
+export const DEFAULT_FEATURE_PRICE: Record<TierFeature, number> = {
+  quickSale: 0,
+  products: 0,
+  productSale: 0,
+  expenses: 0,
+  fullReports: 0,
+  creditBook: 200,
+  barcode: 150,
+  discount: 100,
+  paymentModes: 100,
+  unlimitedProducts: 200,
+  exportData: 200,
+  staff: 300,
+  kitchenStock: 400,
+  branches: 300,
+  suppliers: 200,
 };
 
 export function minTierFor(feature: TierFeature): Tier {
-  return TIER_ORDER.find((tier) => TIER_FEATURES[tier].includes(feature)) ?? 'premium';
+  if (BASIC_FEATURES.includes(feature)) return 'basic';
+  if (STANDARD_FEATURES.includes(feature)) return 'pro';
+  return 'premium';
 }
 
 export function tierHas(tier: Tier, feature: TierFeature) {
   return TIER_FEATURES[tier].includes(feature);
 }
 
-/** Guess a tier when the plan document has no `tier` field. The old Monthly / Quarterly plans are Pro (grandfathered). */
+export function isPlanIncluded(tier: Tier, feature: TierFeature) {
+  return tier === 'premium' ? true : tierHas(tier, feature);
+}
+
 export function tierFromPlan(plan: string): Tier {
   const name = plan.toLowerCase();
-  if (/premium|business/.test(name)) return 'premium';
-  if (/\bpro\b/.test(name)) return 'pro';
+  if (/premium|business|custom|full/.test(name)) return 'premium';
+  if (/\bpro\b|standard|1000/.test(name)) return 'pro';
   if (/month|quarter/.test(name) && !/basic/.test(name)) return 'pro';
   return 'basic';
 }
@@ -107,61 +124,59 @@ export function isTier(value: unknown): value is Tier {
   return value === 'basic' || value === 'pro' || value === 'premium';
 }
 
+export function isTierFeature(value: unknown): value is TierFeature {
+  return typeof value === 'string' && (ALL_FEATURES as string[]).includes(value);
+}
+
 export const FEATURE_TITLE: Record<TierFeature, string> = {
-  creditBook: 'Customer credit book (udhaar)',
+  quickSale: 'Quick sale',
+  products: 'Product add / catalog',
+  productSale: 'Product / menu sale',
+  expenses: 'Expenses',
+  fullReports: 'Reports',
+  creditBook: 'Credit book',
   barcode: 'Barcode scan',
   discount: 'Bill discounts',
-  paymentModes: 'Cash / Card / Credit',
-  billReturn: 'Bill return and edit',
-  lowStockAlerts: 'Low stock alerts',
-  reorderList: 'Reorder list',
+  paymentModes: 'Cash / Card / Credit pay',
   unlimitedProducts: 'Unlimited products',
-  bulkImport: 'Bulk import (Excel / CSV)',
-  fullReports: 'Full reports',
-  exportData: 'Export PDF / Excel / WhatsApp',
-  digitalReceipt: 'Digital receipt share',
-  saleNotes: 'Notes and date change',
-  staff: 'Staff logins, roles and audit log',
-  kitchenStock: 'Kitchen: raw materials, recipe cost, variance',
-  branches: 'Multi-branch sales and stock transfer',
-  suppliers: 'Suppliers and payables',
-  vatInvoice: 'VAT / A4 tax invoice',
-  batchExpiry: 'Batch and expiry',
-  cloudBackup: 'Cloud backup and restore',
-  aiAssistant: 'AI shop assistant',
-  voiceBilling: 'Tamil voice billing',
-  loyalty: 'Loyalty points',
-  customBranding: 'Custom receipt branding',
-  prioritySupport: 'Priority support',
+  exportData: 'Excel export & import',
+  staff: 'Staff roles + audit log',
+  kitchenStock: 'Kitchen (buy / send / make)',
+  branches: 'Multi-branch (2 included)',
+  suppliers: 'Suppliers & payables',
 };
 
 export const FEATURE_STATUS: Record<TierFeature, 'live' | 'soon'> = {
+  quickSale: 'live',
+  products: 'live',
+  productSale: 'live',
+  expenses: 'live',
+  fullReports: 'live',
   creditBook: 'live',
   barcode: 'live',
   discount: 'live',
   paymentModes: 'live',
-  billReturn: 'soon',
-  lowStockAlerts: 'live',
-  reorderList: 'live',
   unlimitedProducts: 'live',
-  bulkImport: 'live',
-  fullReports: 'live',
   exportData: 'live',
-  digitalReceipt: 'soon',
-  saleNotes: 'live',
   staff: 'live',
   kitchenStock: 'live',
   branches: 'live',
   suppliers: 'live',
-  vatInvoice: 'soon',
-  batchExpiry: 'live',
-  cloudBackup: 'live',
-  aiAssistant: 'soon',
-  voiceBilling: 'soon',
-  loyalty: 'soon',
-  customBranding: 'soon',
-  prioritySupport: 'live',
 };
 
-/** Premium is listed once several Premium tools are in the app. */
 export const SHOW_PREMIUM_TIER = true;
+
+export function calcSubscriptionTotal(
+  planPrice: number,
+  enabled: TierFeature[],
+  prices: Partial<Record<TierFeature, number>>,
+  included: TierFeature[],
+) {
+  const includedSet = new Set(included);
+  let addons = 0;
+  for (const f of enabled) {
+    if (includedSet.has(f)) continue;
+    addons += Math.max(0, Number(prices[f] ?? DEFAULT_FEATURE_PRICE[f]) || 0);
+  }
+  return Math.round(Math.max(0, planPrice) + addons);
+}

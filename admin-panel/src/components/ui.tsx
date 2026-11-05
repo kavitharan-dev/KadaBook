@@ -7,8 +7,8 @@ import type { ShopStatus } from '../types/models';
 
 export function PageTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="mb-6">
-      <h1 className="text-[22px] font-semibold tracking-tight text-ink">{title}</h1>
+    <div className="mb-6 apk-fade-up">
+      <h1 className="text-[24px] font-bold tracking-tight text-ink">{title}</h1>
       {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
     </div>
   );
@@ -16,12 +16,7 @@ export function PageTitle({ title, subtitle }: { title: string; subtitle?: strin
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <section
-      className={clsx(
-        'rounded-[14px] border border-line bg-surface p-5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
-        className,
-      )}
-    >
+    <section className={clsx('apk-card p-5', className)}>
       {children}
     </section>
   );
@@ -95,7 +90,7 @@ export function PrimaryButton({
       type={type}
       {...props}
       className={clsx(
-        'inline-flex h-10 items-center justify-center rounded-lg bg-brand px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-[#174ebf] active:scale-[0.98] disabled:opacity-50',
+        'apk-press inline-flex h-10 items-center justify-center rounded-2xl bg-brand px-4 text-[13px] font-bold text-white shadow-[0_6px_16px_rgba(29,95,224,0.28)] transition hover:bg-[#1546a8] disabled:opacity-50',
         className,
       )}
     >
@@ -114,7 +109,7 @@ export function GhostButton({
       type="button"
       {...props}
       className={clsx(
-        'inline-flex h-10 items-center justify-center rounded-lg border border-line bg-surface px-4 text-[13px] font-semibold text-ink transition hover:bg-muted-bg active:scale-[0.98]',
+        'apk-press inline-flex h-10 items-center justify-center rounded-2xl border border-line bg-surface px-4 text-[13px] font-semibold text-ink transition hover:bg-brand-soft hover:text-brand',
         className,
       )}
     >
@@ -129,7 +124,7 @@ export function Skeleton({ className }: { className?: string }) {
 
 export function TableWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <div className="apk-card overflow-x-auto">
       {children}
     </div>
   );

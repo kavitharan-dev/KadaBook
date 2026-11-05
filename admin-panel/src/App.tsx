@@ -12,6 +12,8 @@ import { AuditPage } from './pages/AuditPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { PaymentsPage } from './pages/PaymentsPage';
+import { FeaturesPage } from './pages/FeaturesPage';
+import { PlansPage } from './pages/PlansPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { SupportPage } from './pages/SupportPage';
 import { UsersPage } from './pages/UsersPage';
@@ -46,7 +48,9 @@ export default function App() {
         <Route index element={<DashboardPage />} />
         <Route path="approvals" element={<RequireRoute path="/approvals"><ApprovalsPage /></RequireRoute>} />
         <Route path="users" element={<RequireRoute path="/users"><UsersPage /></RequireRoute>} />
+        <Route path="plans" element={<RequireRoute path="/plans"><PlansPage /></RequireRoute>} />
         <Route path="subscriptions" element={<RequireRoute path="/subscriptions"><SubscriptionsPage /></RequireRoute>} />
+        <Route path="features" element={<RequireRoute path="/features"><FeaturesPage /></RequireRoute>} />
         <Route path="payments" element={<RequireRoute path="/payments"><PaymentsPage /></RequireRoute>} />
         <Route path="announcements" element={<RequireRoute path="/announcements"><AnnouncementsPage /></RequireRoute>} />
         <Route path="access-control" element={<RequireRoute path="/access-control"><AccessControlPage /></RequireRoute>} />

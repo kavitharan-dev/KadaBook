@@ -9,6 +9,12 @@ export function canAddProductToCart(
   cart: SaleLine[],
   addQty = 1,
 ): { ok: true } | { ok: false; message: string } {
+  // Linked fridge item: never hard-block (warning only on the bill).
+  if (product.stockItemId) return { ok: true };
+  // Kitchen menu / juice (and any non-simple sell) — no shelf-stock gate.
+  if (product.sellKind === 'menu') return { ok: true };
+  const cat = (product.category ?? '').trim().toLowerCase();
+  if (cat === 'food' || /juice|lassi|shake|mojito|bubble|hot drink/.test(cat)) return { ok: true };
   if (product.stock <= 0) {
     return { ok: false, message: `${product.name} is out of stock.` };
   }

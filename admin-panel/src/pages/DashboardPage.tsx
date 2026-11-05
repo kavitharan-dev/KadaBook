@@ -1,26 +1,34 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
-import { Clock, Store, TrendingUp, UserCheck, Wallet } from 'lucide-react';
-import { BarChart } from '../components/BarChart';
 import {
-  Card,
-  EmptyState,
-  PageTitle,
-  PrimaryButton,
-  SectionTitle,
-  Skeleton,
-  StatCard,
-} from '../components/ui';
+  Clock,
+  CreditCard,
+  Puzzle,
+  Store,
+  Tags,
+  TrendingUp,
+  UserCheck,
+  Wallet,
+} from 'lucide-react';
+import { GradientStatLink, IconLinkTile, SoftPanel } from '../components/ApkTiles';
+import { EmptyState, PageTitle, PrimaryButton, SectionTitle, Skeleton } from '../components/ui';
 import { useCollection } from '../hooks/useCollection';
 import { mapPayment, mapShop, mapSub } from '../lib/mappers';
 import { formatRs, startOfMonth } from '../lib/format';
+
+const QUICK = [
+  { to: '/approvals', label: 'Approvals', hint: 'New shops', Icon: UserCheck, tone: 'orange' as const },
+  { to: '/users', label: 'Shops', hint: 'Features', Icon: Store, tone: 'blue' as const },
+  { to: '/plans', label: 'Plans', hint: 'Basic/Std', Icon: Tags, tone: 'teal' as const },
+  { to: '/features', label: 'Features', hint: 'Add-ons', Icon: Puzzle, tone: 'purple' as const },
+  { to: '/subscriptions', label: 'Subs', hint: 'Activate', Icon: CreditCard, tone: 'green' as const },
+  { to: '/payments', label: 'Payments', hint: 'Cash in', Icon: Wallet, tone: 'red' as const },
+];
 
 export function DashboardPage() {
   const { rows: shops, loading: l1 } = useCollection('users', mapShop);
   const { rows: payments, loading: l2 } = useCollection('payments', mapPayment);
   const { rows: subs, loading: l3 } = useCollection('subscriptions', mapSub);
-  const reduce = useReducedMotion();
 
   const stats = useMemo(() => {
     const now = Date.now();
@@ -33,7 +41,6 @@ export function DashboardPage() {
       expiring: subs.filter((s) => s.expiresAt > now && s.expiresAt <= week).length,
       grace: shops.filter((s) => s.status === 'grace').length,
       revenue: payments.filter((p) => p.paidAt >= monthStart).reduce((a, p) => a + p.amount, 0),
-      signupsByWeek: buildWeeklySignups(shops),
     };
   }, [shops, payments, subs]);
 
@@ -65,77 +72,76 @@ export function DashboardPage() {
 
   const loading = l1 || l2 || l3;
 
+  const metricCards = [
+    { label: 'Total shops', value: String(stats.total), tone: 'purple' as const, Icon: Store, to: '/users' },
+    { label: 'Pending approval', value: String(stats.pending), tone: 'orange' as const, Icon: UserCheck, to: '/approvals' },
+    { label: 'Active / trial', value: String(stats.active), tone: 'teal' as const, Icon: TrendingUp, to: '/users' },
+    { label: 'Expiring (7d)', value: String(stats.expiring), tone: 'red' as const, Icon: Clock, to: '/subscriptions' },
+    { label: 'Month revenue', value: formatRs(stats.revenue), tone: 'green' as const, Icon: Wallet, to: '/payments' },
+  ];
+
   return (
     <div className="mx-auto max-w-[1200px]">
-      <PageTitle title="Dashboard" subtitle="Live counts, revenue, and items that need action" />
+      <PageTitle title="Dashboard" subtitle="Tap an icon — same colours & cards as the KadaBook app" />
+
+      <SectionTitle>Quick actions</SectionTitle>
+      <div className="mb-7 mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {QUICK.map((q, i) => (
+          <IconLinkTile
+            key={q.to}
+            to={q.to}
+            label={q.label}
+            hint={q.hint}
+            Icon={q.Icon}
+            tone={q.tone}
+            delay={i * 0.04}
+          />
+        ))}
+      </div>
+
+      <SectionTitle>Today at a glance</SectionTitle>
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-[100px]" />
+        <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-[118px] rounded-[16px]" />
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total shops" value={stats.total} icon={Store} delay={0} />
-          <StatCard label="Pending approval" value={stats.pending} tone="warn" icon={UserCheck} delay={0.05} />
-          <StatCard label="Active / trial" value={stats.active} tone="sale" icon={TrendingUp} delay={0.1} />
-          <StatCard label="Expiring in 7 days" value={stats.expiring} tone="warn" icon={Clock} delay={0.15} />
+        <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {metricCards.map((m, i) => (
+            <GradientStatLink
+              key={m.label}
+              to={m.to}
+              label={m.label}
+              value={m.value}
+              Icon={m.Icon}
+              tone={m.tone}
+              delay={0.1 + i * 0.05}
+            />
+          ))}
         </div>
       )}
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <SectionTitle>Signups per week</SectionTitle>
-          <div className="mt-4">
-            {loading ? <Skeleton className="h-[140px]" /> : <BarChart data={stats.signupsByWeek} />}
-          </div>
-        </Card>
-        <Card>
-          <SectionTitle>Monthly revenue</SectionTitle>
-          <p className="mt-4 flex items-center gap-2 text-[28px] font-bold tracking-tight text-brand">
-            <Wallet className="h-6 w-6 opacity-80" strokeWidth={2} aria-hidden />
-            {formatRs(stats.revenue)}
-          </p>
-          <p className="mt-2 text-sm text-muted">From payments recorded this month</p>
-        </Card>
-      </div>
-      <Card className="mt-6">
+
+      <SoftPanel className="mt-6">
         <SectionTitle>Needs attention</SectionTitle>
         {attention.length === 0 ? (
           <EmptyState message="All clear — nothing urgent right now." />
         ) : (
           <ul className="mt-4 flex flex-col gap-2.5">
-            {attention.map((item, i) => (
-              <motion.li
+            {attention.map((item) => (
+              <li
                 key={item.label}
-                initial={reduce ? false : { opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: reduce ? 0 : i * 0.06 }}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line/80 bg-muted-bg/50 px-4 py-3 text-sm"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-hairline bg-gradient-top/70 px-4 py-3 text-sm"
               >
-                <span className="font-medium text-ink">{item.label}</span>
+                <span className="font-semibold text-ink">{item.label}</span>
                 <Link to={item.to}>
                   <PrimaryButton>{item.cta}</PrimaryButton>
                 </Link>
-              </motion.li>
+              </li>
             ))}
           </ul>
         )}
-      </Card>
+      </SoftPanel>
     </div>
   );
-}
-
-function buildWeeklySignups(shops: ReturnType<typeof mapShop>[]) {
-  const buckets: { label: string; value: number }[] = [];
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const start = new Date(now);
-    start.setDate(start.getDate() - i * 7);
-    start.setHours(0, 0, 0, 0);
-    const end = start.getTime() + 7 * 86400000;
-    const label = start.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-    const value = shops.filter((s) => (s.createdAt ?? 0) >= start.getTime() && (s.createdAt ?? 0) < end).length;
-    buckets.push({ label, value });
-  }
-  return buckets;
 }

@@ -50,7 +50,8 @@ export function PlanLocked({ title, feature }: { title: string; feature: TierFea
         <Text style={styles.icon}>⭐</Text>
         <Text style={[styles.title, { color: colors.ink }]}>{FEATURE_TITLE[feature]}</Text>
         <Text style={[styles.text, { color: colors.muted }]}>
-          Included in {neededTier(feature)} ({TIER_PRICE_HINT[needed]}). Your shop is on {label}.
+          Not on your plan yet. Ask admin to enable it (add-on). Your shop is on {label}
+          {needed ? ` · usually from ${neededTier(feature)} (${TIER_PRICE_HINT[needed]})` : ''}.
         </Text>
         {can(user, 'shopSettings') ? (
           <View style={styles.cta}>

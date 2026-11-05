@@ -1,7 +1,26 @@
 /**
- * Kitchen and Stock: raw materials, recipes, branches and one stock-movement ledger.
- * Stock of a material at a branch = the sum of its movement quantities at that branch.
+ * Kitchen and Stock: stock items, recipes, branches, per-branch stock and one movement ledger.
+ * Stock of an item at a branch lives in stock/{branchId}_{itemId}, changed in the same
+ * transaction as its ledger movement (see lib/stockEngine.ts).
  */
+
+/** raw = used in recipes; finished = sold, made from a recipe; direct = sold as it comes, no recipe. */
+export type ItemKind = 'raw' | 'finished' | 'direct';
+
+export const ITEM_KIND_LABEL: Record<ItemKind, string> = {
+  raw: 'Ingredients',
+  finished: 'Ready food',
+  direct: 'By weight / pack',
+};
+
+/** One item at one branch. */
+export type StockRow = {
+  branchId: string;
+  itemId: string;
+  qty: number;
+  /** Weighted average cost of one unit at this branch, in rupees. */
+  avgCost: number;
+};
 
 export type MaterialUnit = 'g' | 'kg' | 'ml' | 'l' | 'pcs' | 'slices' | 'pair' | 'roll';
 export const MATERIAL_UNITS: MaterialUnit[] = ['pcs', 'kg', 'g', 'l', 'ml', 'slices', 'pair', 'roll'];
@@ -20,7 +39,9 @@ export type RawMaterial = {
   id: string;
   name: string;
   unit: MaterialUnit;
-  /** Weighted average cost of one unit, in rupees. Updated on every purchase and production. */
+  /** Missing on older rows: see itemKind() in lib/stockEngine.ts. */
+  kind?: ItemKind;
+  /** Cost when the item was set up. The live cost is per branch, on its stock row. */
   avgCost: number;
   reorderLevel: number;
   /** Group from the standard catalog (Meat, Bakery, Sauces…). */
@@ -49,18 +70,24 @@ export type MoveType =
   | 'transferIn'
   | 'productionIn'
   | 'productionOut'
+  | 'assembleIn'
+  | 'assembleOut'
+  | 'saleReturn'
   | 'counterOut'
   | 'wastage'
   | 'adjust';
 
 export const MOVE_LABEL: Record<MoveType, string> = {
   purchase: 'Purchase',
-  sale: 'Sales usage',
-  transferOut: 'Transfer out',
-  transferIn: 'Transfer in',
-  productionIn: 'Produced',
-  productionOut: 'Used in production',
-  counterOut: 'To Foods / cashier',
+  sale: 'Sold',
+  transferOut: 'Sent',
+  transferIn: 'Received',
+  productionIn: 'Made',
+  productionOut: 'Used to make',
+  assembleIn: 'Assembled',
+  assembleOut: 'Used to assemble',
+  saleReturn: 'Bill returned',
+  counterOut: 'Sold / counter',
   wastage: 'Wastage',
   adjust: 'Stock count',
 };
@@ -93,9 +120,11 @@ export type KitchenData = {
   materials: RawMaterial[];
   recipes: Recipe[];
   moves: StockMove[];
+  /** Keyed by stockRowId(branchId, itemId). */
+  stock: Record<string, StockRow>;
 };
 
-export const EMPTY_KITCHEN: KitchenData = { branches: [], materials: [], recipes: [], moves: [] };
+export const EMPTY_KITCHEN: KitchenData = { branches: [], materials: [], recipes: [], moves: [], stock: {} };
 
 /** 'all' shows every branch together in reports and stock. */
 export type BranchScope = string | 'all';

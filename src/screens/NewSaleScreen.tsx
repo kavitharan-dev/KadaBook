@@ -13,7 +13,7 @@ import { ProductTile } from '../components/ProductTile';
 import { ScanIcon } from '../components/Icons';
 import { BranchChips } from '../components/kitchen/KitchenUi';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
-import { effectiveSellKind, hasRecipe } from '../lib/productSell';
+import { effectiveSellKind } from '../lib/productSell';
 import { usesKitchenStock } from '../lib/shopType';
 import { AccessBlockedModal } from '../components/GateModals';
 import { useAuth } from '../context/AuthContext';
@@ -26,11 +26,14 @@ import { discountAmount } from '../data/saleExtras';
 import type { DraftInfo, Product, SaleLine, SavedOrder } from '../data/types';
 import { productSellingPrice } from '../lib/booksNormalize';
 import { formatRs, formatTime } from '../lib/format';
+import { formatQty } from '../lib/kitchenOps';
+import type { RawMaterial } from '../data/kitchenTypes';
 import { closeToDashboard } from '../lib/navigation';
 import { printOrShareReceipt } from '../lib/printReceipt';
 import { billTotal } from '../lib/saleOps';
 import { customerBalance } from '../lib/shopPlus';
 import { useResponsive } from '../lib/useResponsive';
+import { useTier } from '../lib/useTier';
 import { usePrintFeedback } from '../lib/usePrintFeedback';
 import { useTheme } from '../context/ThemeContext';
 import { tryMergeCartLine } from '../lib/stockCart';
@@ -41,12 +44,48 @@ import { fonts } from '../theme/fonts';
 
 type SaleMode = 'quick' | 'products' | 'saved';
 
+/** Never blocks a linked product: the fridge can be ahead of what was entered. */
+function fridgeWarning(product: Product, billQty: number, branchStock: Record<string, number>, items: RawMaterial[]) {
+  if (!product.stockItemId) return null;
+  const have = branchStock[product.stockItemId] ?? 0;
+  const need = billQty * (product.portionQty && product.portionQty > 0 ? product.portionQty : 1);
+  if (need <= have) return null;
+  const unit = items.find((m) => m.id === product.stockItemId)?.unit ?? product.unit;
+  return `${product.name}: Fridge shows ${formatQty(have, unit)}`;
+}
+
 function addProductToBill(
   cart: SaleLine[],
   product: Product,
   setError: (msg: string | null) => void,
+  kitchenMenu?: boolean,
 ): SaleLine[] {
   const unitPrice = productSellingPrice(product);
+  // Kitchen menu / juice with no fridge link: always add (ignore product.stock === 0).
+  if (kitchenMenu && !product.stockItemId) {
+    const existing = cart.find((line) => line.productId === product.id);
+    const unitCost = Math.round(product.purchasePrice) || 0;
+    setError(null);
+    if (existing) {
+      const nextQty = existing.qty + 1;
+      return cart.map((line) =>
+        line.productId === product.id
+          ? { ...line, qty: nextQty, unitPrice, unitCost, lineTotal: Math.round(nextQty * unitPrice) }
+          : line,
+      );
+    }
+    return [
+      ...cart,
+      {
+        productId: product.id,
+        name: product.name,
+        qty: 1,
+        unitPrice,
+        unitCost,
+        lineTotal: Math.round(unitPrice),
+      },
+    ];
+  }
   const next = tryMergeCartLine(cart, product, 1, unitPrice);
   if (!next) {
     const inCart = cart.find((l) => l.productId === product.id)?.qty ?? 0;
@@ -71,17 +110,19 @@ export function NewSaleScreen() {
   const { colors } = useTheme();
   const kitchen = useKitchen();
   const { can } = useRole();
+  const { has } = useTier();
   const isKitchenShop = usesKitchenStock(profile?.shopType ?? user?.shopType);
+  const canProductSale = has('productSale');
   const { contentMaxWidth, padX, keySize } = useResponsive();
 
   // The keyboard can cover the payment / discount / customer fields (no auto-resize on newer Android),
   // so pad the list by the keyboard height and scroll the form into view.
   const scrollRef = useRef<any>(null);
   const [kbHeight, setKbHeight] = useState(0);
-  const modeRef = useRef<SaleMode>('quick');
+  const modeRef = useRef<SaleMode>(isKitchenShop && canProductSale ? 'products' : 'quick');
   const printFx = usePrintFeedback();
   const toast = useToast();
-  const [mode, setMode] = useState<SaleMode>('quick');
+  const [mode, setMode] = useState<SaleMode>(isKitchenShop && canProductSale ? 'products' : 'quick');
   const [amount, setAmount] = useState('');
   const [calcStack, setCalcStack] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
@@ -95,8 +136,13 @@ export function NewSaleScreen() {
   // Customer / payment popup, then the bill once saved.
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  // Every feature is on for now. The plan split comes last.
-  const allow = { pay: true, discount: true, customer: true };
+  // Plan ticks drive these (grandfather = all on via useTier).
+  const canBarcode = has('barcode');
+  const allow = {
+    pay: has('paymentModes'),
+    discount: has('discount'),
+    customer: has('creditBook'),
+  };
 
   // Existing customers for the phone / name suggestions, with what each one still owes.
   const customerOptions = useMemo(
@@ -114,6 +160,12 @@ export function NewSaleScreen() {
   const baseExtras = buildExtras(extras, allow, subtotal);
   // Kitchen & Stock: every sale carries the branch it was made at.
   const extrasInput = kitchen.activeBranchId ? { ...baseExtras, branchId: kitchen.activeBranchId } : baseExtras;
+  // Tiles show what this branch has, not the shop total.
+  const branchStock = useMemo(
+    () => (kitchen.activeBranchId ? kitchen.stockAt(kitchen.activeBranchId) : {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [kitchen.activeBranchId, kitchen.data.stock],
+  );
   const off = discountAmount(subtotal, extrasInput?.discount);
   const cartToPay = Math.max(0, cartTotal - off);
 
@@ -145,6 +197,18 @@ export function NewSaleScreen() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+
+  // Shop type can resolve after mount — land kitchen staff on Food, not Quick.
+  useEffect(() => {
+    if (!isKitchenShop || !canProductSale || mode !== 'quick') return;
+    if (amount || calcStack.length || cart.length) return;
+    setMode('products');
+  }, [isKitchenShop, canProductSale]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (canProductSale || mode !== 'products') return;
+    setMode('quick');
+  }, [canProductSale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const ios = Platform.OS === 'ios';
@@ -240,11 +304,7 @@ export function NewSaleScreen() {
     const startedAt = Date.now();
     try {
       await checkoutBill(cart, extrasInput);
-      const sold = cart;
       setCart([]);
-      if (isKitchenShop) {
-        kitchen.recordSale(sold).catch(() => toast.show('error', 'Sale saved, but kitchen stock usage could not be recorded.'));
-      }
       afterSaved(startedAt);
     } catch (caught) {
       showError(caught);
@@ -354,15 +414,23 @@ export function NewSaleScreen() {
   }
 
   function changeMode(next: SaleMode) {
+    if (next === 'products' && !canProductSale) {
+      setError('Product sale is not on your plan. Ask admin to enable it.');
+      return;
+    }
     setMode(next);
     setError(null);
     setNotice(null);
     setJustSavedAt(null);
   }
 
-  const tabs: { key: SaleMode; label: string }[] = [
-    // The old English label "Sale – All" was unclear; other languages keep their translation.
-    { key: 'products', label: locale === 'en' ? 'Products' : t((m) => m.sale.tabProducts) },
+  const tabs: { key: SaleMode; label: string; locked?: boolean }[] = [
+    // Kitchen sells food tiles first; retail keeps Products / Quick. Locked tabs stay visible.
+    {
+      key: 'products',
+      label: isKitchenShop ? (locale === 'en' ? 'Food' : t((m) => m.sale.tabProducts)) : locale === 'en' ? 'Products' : t((m) => m.sale.tabProducts),
+      locked: !canProductSale,
+    },
     { key: 'quick', label: t((m) => m.sale.tabQuick) },
     {
       key: 'saved',
@@ -455,14 +523,15 @@ export function NewSaleScreen() {
       <View style={[styles.tabs, { paddingHorizontal: Math.max(12, padX - 4), borderBottomColor: colors.hairline }]}>
         {tabs.map((tab) => {
           const on = tab.key === mode;
+          const locked = Boolean(tab.locked);
           return (
             <Pressable
               key={tab.key}
               onPress={() => changeMode(tab.key)}
-              style={[styles.tab, { borderBottomColor: on ? colors.brand : 'transparent' }]}
+              style={[styles.tab, { borderBottomColor: on ? colors.brand : 'transparent', opacity: locked ? 0.45 : 1 }]}
             >
               <Text style={[styles.tabText, { color: on ? colors.brand : colors.muted }]} numberOfLines={1}>
-                {tab.label}
+                {locked ? `🔒 ${tab.label}` : tab.label}
               </Text>
             </Pressable>
           );
@@ -483,28 +552,41 @@ export function NewSaleScreen() {
                 onChangeText={setSearch}
                 onSubmitEditing={() => {
                   const code = search.trim();
+                  if (isKitchenShop) {
+                    const hit = books.products.find((p) => p.name.toLowerCase().includes(code.toLowerCase()));
+                    if (!hit) {
+                      if (code) setError('No food match.');
+                      return;
+                    }
+                    setCart((current) => addProductToBill(current, hit, setError, true));
+                    setSearch('');
+                    setMode('products');
+                    return;
+                  }
                   const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
                   if (!hit) {
                     if (code) setError(t((m) => m.sale.scanNotFound).replace('{code}', code));
                     return;
                   }
-                  setCart((current) => addProductToBill(current, hit, setError));
+                  setCart((current) => addProductToBill(current, hit, setError, false));
                   setSearch('');
                   setMode('products');
                 }}
-                placeholder={t((m) => m.sale.searchProducts)}
+                placeholder={isKitchenShop ? 'Search menu' : t((m) => m.sale.searchProducts)}
                 autoCapitalize="none"
                 style={styles.searchField}
               />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t((m) => m.sale.scanBarcode)}
-                onPress={() => setScannerOpen(true)}
-                style={[styles.scanBtn, { backgroundColor: colors.brand }]}
-              >
-                <ScanIcon color={colors.onFill} size={20} />
-                <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
-              </Pressable>
+              {!isKitchenShop && canBarcode ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t((m) => m.sale.scanBarcode)}
+                  onPress={() => setScannerOpen(true)}
+                  style={[styles.scanBtn, { backgroundColor: colors.brand }]}
+                >
+                  <ScanIcon color={colors.onFill} size={20} />
+                  <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
+                </Pressable>
+              ) : null}
             </View>
 
             <ScrollView
@@ -516,25 +598,33 @@ export function NewSaleScreen() {
               <View style={styles.grid}>
                 {filteredProducts.map((product) => {
                   const kind = effectiveSellKind(product, kitchen.data.recipes);
-                  const recipeOk = hasRecipe(product.id, kitchen.data.recipes);
-                  const kindBadge = !isKitchenShop
-                    ? null
-                    : kind === 'simple'
-                      ? 'Simple'
-                      : recipeOk
-                        ? 'Menu'
-                        : 'Needs recipe';
+                  // Kitchen unlinked menu (e.g. juice): sell OK, no fridge cut — no scary badge.
+                  const kindBadge =
+                    !isKitchenShop || product.stockItemId || kind === 'menu'
+                      ? null
+                      : 'Pack / bottle';
+                  const linkedItem = product.stockItemId ? kitchen.data.materials.find((m) => m.id === product.stockItemId) : undefined;
+                  const linkedQty = product.stockItemId ? branchStock[product.stockItemId] ?? 0 : 0;
+                  const portion = product.portionQty && product.portionQty > 0 ? product.portionQty : 1;
                   return (
                     <ProductTile
                       key={product.id}
                       name={product.name}
                       price={productSellingPrice(product).toLocaleString('en-IN')}
-                      stockLabel={product.stock > 0 ? `${product.stock} ${product.unit}` : '—'}
-                      low={product.stock > 0 && product.stock <= 5}
-                      out={product.stock <= 0}
+                      stockLabel={
+                        product.stockItemId
+                          ? formatQty(linkedQty, linkedItem?.unit ?? product.unit)
+                          : isKitchenShop && kind === 'menu'
+                            ? 'Menu'
+                            : product.stock > 0
+                              ? `${product.stock} ${product.unit}`
+                              : '—'
+                      }
+                      low={product.stockItemId ? linkedQty < portion * 5 : !isKitchenShop && product.stock > 0 && product.stock <= 5}
+                      out={isKitchenShop ? false : product.stock <= 0}
                       qty={cart.find((l) => l.productId === product.id)?.qty ?? 0}
                       kindBadge={kindBadge}
-                      onPress={() => setCart((lines) => addProductToBill(lines, product, setError))}
+                      onPress={() => setCart((lines) => addProductToBill(lines, product, setError, isKitchenShop))}
                     />
                   );
                 })}
@@ -553,26 +643,15 @@ export function NewSaleScreen() {
                   keyboardShouldPersistTaps="handled"
                   nestedScrollEnabled
                 >
-                  {isKitchenShop
-                    ? (() => {
-                        const missing = cart.filter((line) => {
-                          if (!line.productId) return false;
-                          const product = books.products.find((p) => p.id === line.productId);
-                          if (!product) return false;
-                          return (
-                            effectiveSellKind(product, kitchen.data.recipes) === 'menu' &&
-                            !hasRecipe(product.id, kitchen.data.recipes)
-                          );
-                        });
-                        if (!missing.length) return null;
-                        return (
-                          <Text style={[styles.cartEmpty, { color: colors.expenseText, textAlign: 'left' }]}>
-                            Menu without recipe: {missing.map((m) => m.name).join(', ')}. Add recipe in Kitchen →
-                            Recipes, then Produce → To Foods so stock is ready.
-                          </Text>
-                        );
-                      })()
-                    : null}
+                  {cart.map((line) => {
+                    const product = books.products.find((p) => p.id === line.productId);
+                    const warning = product ? fridgeWarning(product, line.qty, branchStock, kitchen.data.materials) : null;
+                    return warning ? (
+                      <Text key={`warn-${line.productId}`} style={[styles.cartEmpty, { color: colors.expenseText, textAlign: 'left' }]}>
+                        ⚠ {warning}
+                      </Text>
+                    ) : null;
+                  })}
                   {cart.map((line) => {
                     const product = books.products.find((p) => p.id === line.productId);
                     return (
@@ -580,7 +659,7 @@ export function NewSaleScreen() {
                         key={line.productId ?? line.name}
                         line={line}
                         unit={product?.unit ?? ''}
-                        maxQty={product ? product.stock : null}
+                        maxQty={product && !product.stockItemId ? product.stock : null}
                         onQty={(qty) => setLineQty(line, qty)}
                         onRemove={() => removeLine(line)}
                         onLimit={(msg) => setError(msg)}
@@ -696,19 +775,20 @@ export function NewSaleScreen() {
         </ScrollView>
       )}
       <BarcodeScannerModal
-        visible={scannerOpen}
+        visible={scannerOpen && canBarcode}
         title={t((m) => m.sale.scanBarcode)}
         hint={t((m) => m.sale.scanHint)}
         onClose={() => setScannerOpen(false)}
         onScan={(code) => {
           setScannerOpen(false);
+          if (!canBarcode) return;
           const hit = books.products.find((p) => p.barcode && p.barcode.toLowerCase() === code.toLowerCase());
           if (!hit) {
             setError(t((m) => m.sale.scanNotFound).replace('{code}', code));
             setSearch(code);
             return;
           }
-          setCart((current) => addProductToBill(current, hit, setError));
+          setCart((current) => addProductToBill(current, hit, setError, isKitchenShop));
           setSearch('');
           toast.show('success', hit.name);
         }}

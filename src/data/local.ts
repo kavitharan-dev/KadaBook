@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { normalizeBooks } from '../lib/booksNormalize';
 import { branchDayId } from '../lib/dayKey';
+import { planSale, planSaleReturn, productUnitCost } from '../lib/stockEngine';
+import { applyLocalStock } from './localStock';
 import { fifoSettledIds } from '../lib/shopPlus';
 import { expenseCategoriesForShop, normalizeCustomExpenseCategory } from '../lib/expenseCategories';
 import {
@@ -179,7 +181,7 @@ export const localRepository: Repository = {
     });
     await writeBooks(uid, books);
   },
-  async checkoutBill(uid, input) {
+  async checkoutBill(uid, input, stock) {
     assertBillItems(input.items);
     const books = await readBooks(uid);
     assertStock(books, input.items);
@@ -187,10 +189,21 @@ export const localRepository: Repository = {
     deductStock(books, input.items);
     const priced = chargedAmount(billTotal(input.items), input.discount?.amount ?? 0);
     const { createdAt, ...extras } = input;
+    const saleId = id();
+    let items = input.items;
+    if (stock?.lines.length) {
+      const plan = await applyLocalStock(uid, (rows) => planSale(rows, [], { branchId: stock.branchId, lines: stock.lines, refId: saleId }));
+      items = items.map((line) => {
+        const product = books.products.find((p) => p.id === line.productId);
+        const unitCost = product ? productUnitCost(product, plan.unitCost) : undefined;
+        return unitCost === undefined ? line : { ...line, unitCost };
+      });
+    }
     books.sales.unshift({
-      id: id(),
-      ...buildBillSale(input.items, invoiceNo),
+      id: saleId,
+      ...buildBillSale(items, invoiceNo),
       ...extras,
+      items,
       subtotal: priced.subtotal,
       amount: priced.amount,
       settled: input.paymentMode === 'credit' ? false : true,
@@ -228,6 +241,8 @@ export const localRepository: Repository = {
       sellingPrice: Math.round(input.sellingPrice),
       purchasePrice: Math.round(input.purchasePrice),
       stock: input.stock,
+      stockItemId: input.stockItemId || undefined,
+      portionQty: input.portionQty && input.portionQty > 0 ? input.portionQty : undefined,
       unit: input.unit.trim() || 'pcs',
       category: input.category.trim() || 'General',
       barcode: input.barcode?.trim(),
@@ -254,6 +269,8 @@ export const localRepository: Repository = {
             sellingPrice: Math.round(input.sellingPrice),
             purchasePrice: Math.round(input.purchasePrice),
             stock: input.stock,
+            ...(input.stockItemId !== undefined ? { stockItemId: input.stockItemId || undefined } : {}),
+            ...(input.portionQty !== undefined ? { portionQty: input.portionQty > 0 ? input.portionQty : undefined } : {}),
             unit: input.unit.trim() || 'pcs',
             category: input.category.trim() || 'General',
             barcode: input.barcode !== undefined ? input.barcode.trim() : product.barcode,
@@ -423,11 +440,14 @@ export const localRepository: Repository = {
     books.audit.unshift({ id: id(), ...input, createdAt: Date.now() });
     await writeBooks(uid, books);
   },
-  async addReturn(uid, input) {
+  async addReturn(uid, input, stock) {
     const books = await readBooks(uid);
     for (const line of input.items) {
       const product = books.products.find((item) => item.id === line.productId);
-      if (product) product.stock += line.qty;
+      if (product && !product.stockItemId) product.stock += line.qty;
+    }
+    if (stock?.lines.length) {
+      await applyLocalStock(uid, (rows) => planSaleReturn(rows, [], { branchId: stock.branchId, lines: stock.lines }));
     }
     books.returns.unshift({ id: id(), ...input, createdAt: Date.now() });
     await writeBooks(uid, books);

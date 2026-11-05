@@ -30,6 +30,7 @@ export function chargedAmount(subtotal: number, discountRs = 0) {
 export function draftFields(info?: DraftInfo): DraftInfo {
   const out: DraftInfo = {};
   if (info?.kind) out.kind = info.kind;
+  if (info?.branchId) out.branchId = info.branchId;
   const name = info?.customerName?.trim().slice(0, 60);
   if (name) out.customerName = name;
   const phone = info?.customerPhone?.trim().slice(0, 20);
@@ -50,7 +51,8 @@ export function assertStock(books: Books, items: SaleLine[]) {
   for (const line of items) {
     if (!line.productId) continue;
     const product = books.products.find((p) => p.id === line.productId);
-    if (!product) continue;
+    // Linked products take per-branch stock, and a sale is never blocked by it.
+    if (!product || product.stockItemId) continue;
     if (product.stock <= 0) {
       throw new Error(`${product.name} is out of stock.`);
     }
@@ -64,7 +66,7 @@ export function deductStock(books: Books, items: SaleLine[]) {
   for (const line of items) {
     if (!line.productId) continue;
     const product = books.products.find((p) => p.id === line.productId);
-    if (!product || product.stock <= 0) continue;
+    if (!product || product.stockItemId || product.stock <= 0) continue;
     product.stock = Math.max(0, product.stock - line.qty);
   }
 }

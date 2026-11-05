@@ -12,6 +12,7 @@ import { Toast, useToast } from '../components/Toast';
 import { FullReports } from '../components/FullReports';
 import { BranchChips } from '../components/kitchen/KitchenUi';
 import { BranchSalesCard } from '../components/BranchSalesCard';
+import { BranchStockReport } from '../components/BranchStockCard';
 import { useKitchen } from '../context/KitchenContext';
 import { scopeBooks } from '../lib/branchScope';
 import { useShopGate } from '../context/ShopGateContext';
@@ -28,9 +29,15 @@ import {
   buildDayCloseSummary,
   shareDayCloseWhatsApp,
 } from '../lib/dayClose';
+import {
+  buildKitchenDayReportExtras,
+  buildKitchenPeriodReportExtras,
+  buildKitchenPeriodReportText,
+} from '../lib/kitchenDailyReport';
 import { buildLowStockReportText } from '../lib/receipt';
 import { periodReportTitle } from '../lib/periodReport';
 import { printTextReport } from '../lib/printReceipt';
+import { usesKitchenStock } from '../lib/shopType';
 import { lowStockProducts } from '../lib/stockCart';
 import { chartBars, periodExpenses, periodRange } from '../lib/stats';
 import { usePrintFeedback } from '../lib/usePrintFeedback';
@@ -64,7 +71,7 @@ export function ReportsScreen() {
   const branchExpenses = scopedBooks.expenses;
   const reportsOn = useFeature('reports');
   const exportOn = useFeature('export');
-  const { canAccess } = useShopGate();
+  const { canAccess, profile } = useShopGate();
   const [blockedOpen, setBlockedOpen] = useState(false);
   const { user } = useAuth();
   const { t, messages } = useI18n();
@@ -82,8 +89,19 @@ export function ReportsScreen() {
     [scopedBooks, range.start, range.end, mode],
   );
   const daySummary = useMemo(() => buildDayCloseSummary(scopedBooks, now), [scopedBooks, now]);
+  const isKitchenShop = usesKitchenStock(profile?.shopType ?? user?.shopType);
+  const kitchenReport = useMemo(() => {
+    if (!isKitchenShop || mode !== 'daily') return null;
+    return buildKitchenDayReportExtras(kitchen.data, scopedBooks, kitchen.scope, now);
+  }, [isKitchenShop, mode, kitchen.data, kitchen.scope, scopedBooks, now]);
+  const kitchenPeriod = useMemo(() => {
+    if (!isKitchenShop || mode === 'daily') return null;
+    return buildKitchenPeriodReportExtras(kitchen.data, scopedBooks, kitchen.scope, range);
+  }, [isKitchenShop, mode, kitchen.data, kitchen.scope, scopedBooks, range.start, range.end]);
   const salesTotal = mode === 'daily' ? daySummary.totalSales : attached.weeklySales;
-  const expenseTotal = mode === 'daily' ? daySummary.expenses : attached.weeklyExpenses;
+  // Running costs only: stock purchases are shown apart and never come off profit.
+  const expenseTotal = mode === 'daily' ? daySummary.operatingExpenses : attached.weeklyOperating;
+  const purchaseTotal = mode === 'daily' ? daySummary.stockPurchase : attached.weeklyStockPurchase;
   const profitTotal = mode === 'daily' ? daySummary.finalProfit : attached.weeklyFinal;
   const bars = chartBars(branchSales, mode, now);
   const max = Math.max(1, ...bars.map((bar) => bar.value));
@@ -100,7 +118,8 @@ export function ReportsScreen() {
           : t((m) => m.home.closeWhatsApp);
 
   function periodBody() {
-    if (mode === 'daily') return buildDayCloseReportText(shopName, daySummary);
+    if (mode === 'daily') return buildDayCloseReportText(shopName, daySummary, null, kitchenReport);
+    if (kitchenPeriod) return buildKitchenPeriodReportText(shopName, attached, kitchenPeriod);
     return buildAttachedPeriodReportText(shopName, attached);
   }
 
@@ -189,6 +208,12 @@ export function ReportsScreen() {
               wash={colors.keypad}
               ink={colors.ink}
             />
+            <Metric
+              label={t((m) => m.home.closeExpectedCash)}
+              value={formatRs(daySummary.expectedCash)}
+              wash={colors.keypad}
+              ink={colors.ink}
+            />
           </View>
         ) : null}
         <View style={styles.metrics}>
@@ -218,6 +243,10 @@ export function ReportsScreen() {
             ink={colors.profitText}
           />
         </View>
+        <View style={styles.metrics}>
+          <Metric label={t((m) => m.home.closeStockPurchase)} value={formatRs(purchaseTotal)} wash={colors.keypad} ink={colors.ink} />
+        </View>
+        <BranchStockReport start={range.start} end={range.end} />
         {mode === 'daily' ? (
           <BranchSalesCard sales={branchSales.filter((sale) => isSameDay(sale.createdAt, now))} branches={branches} />
         ) : null}
