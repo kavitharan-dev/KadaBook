@@ -9,13 +9,13 @@ import {
   type ReactNode,
 } from 'react';
 import { AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { AppLogo } from './AppLogo';
 import { Screen } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { fonts } from '../theme/fonts';
+import { secureStore } from '../lib/secureStore';
 
 const PIN_LENGTH = 4;
 const MAX_FAILS = 5;
@@ -42,8 +42,8 @@ export async function clearSavedPin(rawUid?: string | null) {
   if (!rawUid) return;
   const uid = safe(rawUid);
   try {
-    await SecureStore.deleteItemAsync(pinKey(uid));
-    await SecureStore.deleteItemAsync(failKey(uid));
+    await secureStore.deleteItemAsync(pinKey(uid));
+    await secureStore.deleteItemAsync(failKey(uid));
   } catch {
     // nothing saved
   }
@@ -68,7 +68,7 @@ type PinLockApi = {
 export async function markSignedOut(rawUid?: string | null) {
   if (!rawUid) return;
   try {
-    await SecureStore.setItemAsync(skipKey(safe(rawUid)), '1');
+    await secureStore.setItemAsync(skipKey(safe(rawUid)), '1');
   } catch {
     // worst case the PIN is asked once after the next login
   }
@@ -120,9 +120,9 @@ export function PinLockGate({ children }: { children: ReactNode }) {
     setIntent('none');
     setEverUnlocked(false);
     Promise.all([
-      SecureStore.getItemAsync(enabledKey(uid)),
-      SecureStore.getItemAsync(pinKey(uid)),
-      SecureStore.getItemAsync(skipKey(uid)),
+      secureStore.getItemAsync(enabledKey(uid)),
+      secureStore.getItemAsync(pinKey(uid)),
+      secureStore.getItemAsync(skipKey(uid)),
     ])
       .then(([flag, saved, skip]) => {
         if (!alive) return;
@@ -130,7 +130,7 @@ export function PinLockGate({ children }: { children: ReactNode }) {
         setPinEnabled(on);
         if (skip === '1') {
           // Just signed in with email and password: no PIN screen this time.
-          SecureStore.deleteItemAsync(skipKey(uid)).catch(() => {});
+          secureStore.deleteItemAsync(skipKey(uid)).catch(() => {});
           setMode(!on || saved ? 'unlocked' : 'set');
           return;
         }
@@ -257,17 +257,17 @@ export function PinLockGate({ children }: { children: ReactNode }) {
             setMode('set');
             return;
           }
-          await SecureStore.setItemAsync(pinKey(uid), await hashPin(uid, pin));
-          await SecureStore.setItemAsync(enabledKey(uid), '1');
-          await SecureStore.deleteItemAsync(failKey(uid));
+          await secureStore.setItemAsync(pinKey(uid), await hashPin(uid, pin));
+          await secureStore.setItemAsync(enabledKey(uid), '1');
+          await secureStore.deleteItemAsync(failKey(uid));
           setPinEnabled(true);
           unlock();
           return;
         }
         if (mode === 'enter') {
-          const saved = await SecureStore.getItemAsync(pinKey(uid));
+          const saved = await secureStore.getItemAsync(pinKey(uid));
           if (saved && saved === (await hashPin(uid, pin))) {
-            await SecureStore.deleteItemAsync(failKey(uid));
+            await secureStore.deleteItemAsync(failKey(uid));
             if (intent === 'change') {
               // Current PIN verified: now let the user pick a new one.
               startSet();
@@ -276,19 +276,19 @@ export function PinLockGate({ children }: { children: ReactNode }) {
             if (intent === 'disable') {
               // Correct PIN entered: switch the lock off and forget the PIN.
               await clearSavedPin(rawUid);
-              await SecureStore.setItemAsync(enabledKey(uid), '0');
+              await secureStore.setItemAsync(enabledKey(uid), '0');
               setPinEnabled(false);
             }
             unlock();
             return;
           }
-          const fails = Number((await SecureStore.getItemAsync(failKey(uid))) ?? '0') + 1;
+          const fails = Number((await secureStore.getItemAsync(failKey(uid))) ?? '0') + 1;
           if (fails >= MAX_FAILS) {
             await clearSavedPin(rawUid);
             await signOut();
             return;
           }
-          await SecureStore.setItemAsync(failKey(uid), String(fails));
+          await secureStore.setItemAsync(failKey(uid), String(fails));
           setDigits('');
           setError(`Wrong PIN. ${MAX_FAILS - fails} tries left.`);
         }
