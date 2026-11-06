@@ -15,6 +15,8 @@ import { AuthProvider } from './src/context/AuthContext';
 import { LocaleProvider, useI18n } from './src/context/LocaleContext';
 import { RemoteConfigProvider } from './src/context/RemoteConfigContext';
 import { ThemeProvider } from './src/context/ThemeContext';
+import { DesignModeOverlay } from './src/devtools/designMode/DesignModeOverlay';
+import { DesignModeProvider } from './src/devtools/designMode/DesignModeContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
 function AppShell() {
@@ -45,13 +47,16 @@ function AppShell() {
 export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
-        <LocaleProvider>
-          <ThemeProvider>
-            <AppShell />
-          </ThemeProvider>
-        </LocaleProvider>
-      </SafeAreaProvider>
+      <DesignModeProvider>
+        <SafeAreaProvider>
+          <LocaleProvider>
+            <ThemeProvider>
+              <AppShell />
+            </ThemeProvider>
+          </LocaleProvider>
+        </SafeAreaProvider>
+        <DesignModeOverlay />
+      </DesignModeProvider>
     </GestureHandlerRootView>
   );
 }

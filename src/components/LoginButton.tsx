@@ -16,13 +16,16 @@ type LoginButtonProps = {
   label?: string;
   /** Rendered after the label, e.g. an arrow or send icon. */
   icon?: ReactNode;
+  /** Overrides the default pill height (and keeps the pill shape by deriving borderRadius from it). */
+  height?: number;
 };
 
 /** Pill-shaped gradient CTA shared by the auth screens (Login, Forgot Password, Create Account). */
-export function LoginButton({ onPress, disabled, label = 'Login', icon }: LoginButtonProps) {
+export function LoginButton({ onPress, disabled, label = 'Login', icon, height }: LoginButtonProps) {
   const { buttonStyle, glowStyle } = useButtonPulse();
   const styles = useStyleSheet(loginButtonStyles);
   const { colors } = useTheme();
+  const sizeOverride = height != null ? { height, borderRadius: height / 2 } : null;
 
   return (
     <View style={styles.wrap}>
@@ -32,7 +35,7 @@ export function LoginButton({ onPress, disabled, label = 'Login', icon }: LoginB
         disabled={disabled}
         onPress={onPress}
         android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
-        style={[styles.button, buttonStyle, disabled ? styles.pressed : null]}
+        style={[styles.button, sizeOverride, buttonStyle, disabled ? styles.pressed : null]}
       >
         <LinearGradient
           colors={['#079EFA', '#0957E5', '#062FAE']}
