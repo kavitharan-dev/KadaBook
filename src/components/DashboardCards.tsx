@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { Image, ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
@@ -20,6 +20,9 @@ import { formatDay, formatRs } from '../lib/format';
 import { fonts } from '../theme/fonts';
 
 type IconType = ComponentType<{ color?: string; size?: number }>;
+
+const DASHBOARD_CARD_BACKGROUND = require('../../assets/dashboard/dashboard-card-bg.png');
+const DASHBOARD_SHOP_IMAGE = require('../../assets/dashboard/dashboard-card-shop-img.png');
 
 export const gradients = {
   blue: ['#1E40AF', '#2563EB', '#3B82F6'],
@@ -105,6 +108,7 @@ function CardShell({
   accessibilityLabel,
   style,
   innerStyle,
+  backgroundSource,
   children,
 }: {
   delay: number;
@@ -115,6 +119,7 @@ function CardShell({
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
   innerStyle?: StyleProp<ViewStyle>;
+  backgroundSource?: ImageSourcePropType;
   children: ReactNode;
 }) {
   const { style: pressStyle, onPressIn, onPressOut } = useIconPress(0.97);
@@ -129,12 +134,18 @@ function CardShell({
           onPressIn={onPressIn}
           onPressOut={onPressOut}
         >
-          <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.card, innerStyle]}>
-            <FloatingOrb size={150} style={styles.orbBig} />
-            <FloatingOrb size={90} style={styles.orbSmall} phase={900} />
-            <ShimmerSweep />
-            {children}
-          </LinearGradient>
+          {backgroundSource ? (
+            <ImageBackground source={backgroundSource} resizeMode="cover" style={[styles.card, innerStyle]} imageStyle={styles.cardImage}>
+              {children}
+            </ImageBackground>
+          ) : (
+            <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.card, innerStyle]}>
+              <FloatingOrb size={150} style={styles.orbBig} />
+              <FloatingOrb size={90} style={styles.orbSmall} phase={900} />
+              <ShimmerSweep />
+              {children}
+            </LinearGradient>
+          )}
         </Pressable>
       </Animated.View>
     </FadeUp>
@@ -231,6 +242,7 @@ export function HeroSalesCard({
       onLongPress={onLongPress}
       accessibilityLabel={`${title}. ${label}`}
       innerStyle={styles.heroCard}
+      backgroundSource={DASHBOARD_CARD_BACKGROUND}
     >
       <View style={styles.heroTop}>
         <View style={styles.heroTopText}>
@@ -251,12 +263,11 @@ export function HeroSalesCard({
         </View>
       </View>
 
-      <View style={styles.heroDivider} />
-
-      <View style={styles.headRow}>
+      <View style={[styles.headRow, styles.headRowSpaced]}>
         <Text style={styles.cardLabel}>{label}</Text>
-        <IconBadge Icon={Icon} size={40} />
+        <IconBadge Icon={Icon} size={34} />
       </View>
+      <Image source={DASHBOARD_SHOP_IMAGE} resizeMode="contain" style={styles.shopImage} accessibilityIgnoresInvertColors />
       <CountUpText value={amount} delay={delay + 150} style={styles.heroAmount} />
       <Text style={styles.heroHint} numberOfLines={1}>
         {hint}
@@ -364,9 +375,12 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
   },
+  cardImage: {
+    borderRadius: 20,
+  },
   heroCard: {
-    padding: 18,
-    minHeight: 210,
+    padding: 16,
+    minHeight: 170,
     gap: 2,
   },
   heroTop: {
@@ -410,14 +424,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontVariant: ['tabular-nums'],
   },
-  heroDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    marginVertical: 12,
-  },
   statCard: {
-    padding: 14,
-    minHeight: 132,
+    padding: 12,
+    minHeight: 112,
   },
   orbBig: {
     top: -55,
@@ -440,6 +449,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  headRowSpaced: {
+    marginTop: 10,
   },
   cardLabel: {
     flex: 1,
@@ -466,6 +478,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontFamily: fonts.bold,
     fontSize: 36,
+    lineHeight: 39,
     color: '#FFFFFF',
     fontVariant: ['tabular-nums'],
   },
@@ -474,6 +487,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.semibold,
     fontSize: 12,
     color: 'rgba(255,255,255,0.85)',
+  },
+  shopImage: {
+    position: 'absolute',
+    right: 44,
+    bottom: 21,
+    width: 174,
+    height: 116,
   },
   statAmount: {
     marginTop: 10,
@@ -484,7 +504,7 @@ const styles = StyleSheet.create({
   },
   footRow: {
     marginTop: 'auto',
-    paddingTop: 12,
+    paddingTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -85,6 +85,8 @@ const ACTIONS: {
   { key: 'products', labelKey: 'products', gradient: gradients.purple, route: 'Products', Icon: BoxDuoIcon, feature: 'manageProducts', flag: 'products', needs: 'manageProducts', planAny: ['products'] },
   { key: 'reports', labelKey: 'reports', gradient: gradients.blue, route: 'Reports', Icon: ChartDuoIcon, feature: 'viewReports', flag: 'reports', needs: 'viewReports', planAny: ['fullReports'] },
 ];
+
+const DASHBOARD_BACKGROUND = require('../../assets/dashboard/dashboard-bg.png');
 
 export function HomeScreen() {
   const navigation = useNavigation<CompositeNavigationProp<
@@ -277,6 +279,7 @@ export function HomeScreen() {
 
   return (
     <Screen>
+      <ImageBackground source={DASHBOARD_BACKGROUND} resizeMode="cover" style={StyleSheet.absoluteFill} pointerEvents="none" />
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
       <OpeningBalanceModal
         visible={openingModal || openingEditing}
@@ -334,7 +337,7 @@ export function HomeScreen() {
       </View>
       <ExpiredRenewBar />
       <ScrollView
-        style={{ backgroundColor: colors.canvas }}
+        style={styles.scroll}
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -572,9 +575,12 @@ const styles = StyleSheet.create({
   body: {
     flexGrow: 1,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 20,
-    gap: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  scroll: {
+    backgroundColor: 'transparent',
   },
   trialSlot: {
     position: 'absolute',
@@ -585,8 +591,8 @@ const styles = StyleSheet.create({
   panel: {
     borderWidth: 1,
     borderRadius: 18,
-    padding: 12,
-    gap: 12,
+    padding: 10,
+    gap: 8,
     boxShadow: '0px 4px 14px rgba(15,23,42,0.05)',
   },
   panelHead: {
@@ -594,7 +600,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 4,
-    paddingBottom: 10,
+    paddingBottom: 7,
     borderBottomWidth: 1,
   },
   panelTitle: {
@@ -605,11 +611,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 12,
+    rowGap: 8,
   },
   sectionHead: {
-    marginTop: 4,
-    marginBottom: -6,
+    marginTop: 2,
+    marginBottom: -4,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -632,7 +638,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 12,
+    rowGap: 10,
   },
   statHalf: {
     width: '48%',

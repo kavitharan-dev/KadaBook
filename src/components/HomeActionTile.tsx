@@ -88,7 +88,7 @@ export function HomeActionTile({ delay, gradient, label, Icon, onPress }: HomeAc
 
 const styles = StyleSheet.create({
   wrap: {
-    width: '48%',
+    width: '31.6%',
   },
   tile: {
     borderRadius: 16,
@@ -98,38 +98,38 @@ const styles = StyleSheet.create({
   },
   press: {
     alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 14,
-    paddingHorizontal: 8,
-    gap: 10,
+    paddingTop: 11,
+    paddingBottom: 9,
+    paddingHorizontal: 4,
+    gap: 6,
   },
   barTrack: {
     position: 'absolute',
     top: 0,
-    left: 18,
-    right: 18,
-    height: 4,
+    left: 8,
+    right: 8,
+    height: 3,
     alignItems: 'center',
   },
   bar: {
-    height: 4,
-    borderBottomLeftRadius: 4,
-    borderBottomRightRadius: 4,
+    height: 3,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
     overflow: 'hidden',
   },
   iconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 42,
+    height: 42,
+    borderRadius: 13,
   },
   iconFill: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   label: {
     fontFamily: fonts.semibold,
-    fontSize: 14,
+    fontSize: 12,
   },
 });
