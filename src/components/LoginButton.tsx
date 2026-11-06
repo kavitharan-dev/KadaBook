@@ -1,3 +1,4 @@
+import { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated from 'react-native-reanimated';
@@ -13,9 +14,12 @@ type LoginButtonProps = {
   onPress?: () => void;
   disabled?: boolean;
   label?: string;
+  /** Rendered after the label, e.g. an arrow or send icon. */
+  icon?: ReactNode;
 };
 
-export function LoginButton({ onPress, disabled, label = 'Login' }: LoginButtonProps) {
+/** Pill-shaped gradient CTA shared by the auth screens (Login, Forgot Password, Create Account). */
+export function LoginButton({ onPress, disabled, label = 'Login', icon }: LoginButtonProps) {
   const { buttonStyle, glowStyle } = useButtonPulse();
   const styles = useStyleSheet(loginButtonStyles);
   const { colors } = useTheme();
@@ -36,7 +40,14 @@ export function LoginButton({ onPress, disabled, label = 'Login' }: LoginButtonP
           end={{ x: 1, y: 1 }}
           style={styles.gradient}
         >
-          {disabled ? <ActivityIndicator color={colors.onFill} /> : <Text style={styles.label}>{label}</Text>}
+          {disabled ? (
+            <ActivityIndicator color={colors.onFill} />
+          ) : (
+            <View style={styles.content}>
+              <Text style={styles.label}>{label}</Text>
+              {icon}
+            </View>
+          )}
         </LinearGradient>
       </AnimatedPressable>
     </View>
@@ -68,6 +79,11 @@ function loginButtonStyles(c: ColorPalette) {
   },
   pressed: {
     opacity: 0.92,
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   label: {
     fontFamily: fonts.semibold,

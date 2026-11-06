@@ -1,9 +1,100 @@
 import { View } from 'react-native';
 import Animated from 'react-native-reanimated';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { useBarGrow } from '../hooks/useBarGrow';
 
 const BRAND = '#075BE2';
+const FIELD_GRAY = '#607493';
+
+export function MailFieldIcon() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="5" width="18" height="14" rx="2" stroke={FIELD_GRAY} strokeWidth={2} />
+      <Path d="m4 7 8 6 8-6" stroke={FIELD_GRAY} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function LockFieldIcon() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+      <Rect x="5" y="10" width="14" height="10" rx="2" stroke={FIELD_GRAY} strokeWidth={2} />
+      <Path d="M8 10V7a4 4 0 0 1 8 0v3" stroke={FIELD_GRAY} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function StoreFieldIcon() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+      <Path d="M4 9.5 5 4h14l1 5.5" stroke={FIELD_GRAY} strokeWidth={1.7} strokeLinejoin="round" />
+      <Path
+        d="M3.5 9.5c0 1.5 1.2 2.6 2.6 2.6S8.7 11 8.7 9.5c0 1.5 1.2 2.6 2.6 2.6s2.6-1.1 2.6-2.6c0 1.5 1.2 2.6 2.6 2.6s2.6-1.1 2.6-2.6"
+        stroke={FIELD_GRAY}
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M5 12v8h14v-8" stroke={FIELD_GRAY} strokeWidth={1.7} />
+    </Svg>
+  );
+}
+
+export function PersonFieldIcon() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="8" r="3.4" stroke={FIELD_GRAY} strokeWidth={1.9} />
+      <Path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6" stroke={FIELD_GRAY} strokeWidth={1.9} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+export function PhoneFieldIcon() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M7 3.5c1 0 1.9.7 2.2 1.7l.6 2a2.3 2.3 0 0 1-.6 2.3l-1 .9a14 14 0 0 0 5.4 5.4l.9-1a2.3 2.3 0 0 1 2.3-.6l2 .6c1 .3 1.7 1.2 1.7 2.2v1.8c0 1.3-1.1 2.3-2.4 2.1C10.8 19.8 4.2 13.2 3.1 6.9 2.9 5.6 3.9 4.5 5.2 4.5H7Z"
+        stroke={FIELD_GRAY}
+        strokeWidth={1.7}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+export function PinFieldIcon() {
+  return (
+    <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12Z" stroke={FIELD_GRAY} strokeWidth={1.8} strokeLinejoin="round" />
+      <Circle cx="12" cy="9" r="2.3" stroke={FIELD_GRAY} strokeWidth={1.8} />
+    </Svg>
+  );
+}
+
+export function ChevronLeftIcon({ color = '#07367F' }: { color?: string }) {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M15 5l-7 7 7 7" stroke={color} strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function ChevronDownIcon() {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Path d="M5 9l7 7 7-7" stroke={FIELD_GRAY} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+export function SendIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M3.5 11.8 20.5 3.5 14 20.5l-2.8-6.7-6.7-2Z" stroke="#FFFFFF" strokeWidth={1.7} strokeLinejoin="round" />
+      <Path d="M11.2 13.8 20.5 3.5" stroke="#FFFFFF" strokeWidth={1.7} strokeLinecap="round" />
+    </Svg>
+  );
+}
 
 export function GlobeIcon() {
   return (
