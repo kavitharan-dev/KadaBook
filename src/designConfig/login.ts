@@ -2,8 +2,8 @@
 export const loginLayout = {
   "shop": {
     "height": 260,
-    "marginTop": 16,
-    "marginBottom": -10
+    "marginTop": -8,
+    "marginBottom": -8
   },
   "button": {
     "height": 46
@@ -13,6 +13,6 @@ export const loginLayout = {
     "paddingBottom": 18
   },
   "footer": {
-    "marginTop": 8
+    "marginTop": 40
   }
 } as const;
