@@ -1,13 +1,24 @@
 import { Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  Printer,
-  getBondedDevices,
-  isBluetoothEnabled,
-  type BluetoothDevice,
-} from 'expo-bluetooth-thermal-printer';
+import type { BluetoothDevice } from 'expo-bluetooth-thermal-printer';
 
 const SAVED_ADDRESS = 'kb_bt_printer_address';
+
+type PrinterModule = typeof import('expo-bluetooth-thermal-printer');
+
+/**
+ * The native module throws at import time on any platform/runtime that doesn't
+ * have it linked (web, Expo Go). Requiring it lazily — only once we're sure
+ * we're on Android and actually about to print — keeps that crash from taking
+ * down the whole bundle on startup.
+ */
+function loadPrinterModule(): PrinterModule {
+  try {
+    return require('expo-bluetooth-thermal-printer') as PrinterModule;
+  } catch {
+    throw new Error('Bluetooth printer is unavailable in this build (needs a native Android build, not Expo Go/web).');
+  }
+}
 
 async function allowBluetooth() {
   if (Platform.OS !== 'android') return false;
@@ -48,6 +59,7 @@ export async function printThermalText(text: string) {
   if (!allowed) {
     throw new Error('Allow Bluetooth permission, then try again.');
   }
+  const { Printer, getBondedDevices, isBluetoothEnabled } = loadPrinterModule();
   if (!isBluetoothEnabled()) {
     throw new Error('Turn Bluetooth on. Pair the printer in phone Settings. PIN is 0000.');
   }
