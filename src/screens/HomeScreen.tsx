@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -118,6 +118,10 @@ export function HomeScreen() {
   );
   const canCloseDay = can('closeDay');
   const canSeeReports = can('viewReports') && has('fullReports');
+  const { height: screenHeight } = useWindowDimensions();
+  const [chromeHeight, setChromeHeight] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const bgHeight = Math.max(screenHeight, chromeHeight + scrollContentHeight);
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [openingModal, setOpeningModal] = useState(false);
   const [openingEditing, setOpeningEditing] = useState(false);
@@ -279,7 +283,7 @@ export function HomeScreen() {
 
   return (
     <Screen>
-      <ImageBackground source={DASHBOARD_BACKGROUND} resizeMode="cover" style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <ImageBackground source={DASHBOARD_BACKGROUND} resizeMode="cover" style={[styles.dashboardBg, { height: bgHeight }]} pointerEvents="none" />
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
       <OpeningBalanceModal
         visible={openingModal || openingEditing}
@@ -314,33 +318,36 @@ export function HomeScreen() {
           void confirmResumeDay();
         }}
       />
-      <View style={styles.top}>
-        <AnimatedIconPress accessibilityLabel="Menu" onPress={() => navigation.navigate('More')} style={styles.iconButton}>
-          <MenuIcon />
-        </AnimatedIconPress>
-        <View style={styles.brand}>
-          <AppLogo size={44} style={styles.brandLogo} />
-          <Text style={[styles.brandName, { color: colors.ink }]}>
-            Kada<Text style={[styles.brandAccent, { color: colors.brand }]}>Book</Text>
-          </Text>
-        </View>
-        <View style={styles.iconButton}>
-          <AnimatedIconPress
-            accessibilityLabel="Notifications"
-            onPress={() => navigation.navigate('Notifications')}
-            style={styles.iconPressInner}
-          >
-            <BellIcon />
+      <View onLayout={(e) => setChromeHeight(e.nativeEvent.layout.height)}>
+        <View style={styles.top}>
+          <AnimatedIconPress accessibilityLabel="Menu" onPress={() => navigation.navigate('More')} style={styles.iconButton}>
+            <MenuIcon />
           </AnimatedIconPress>
-          <PulsingDot visible={hasToday} />
+          <View style={styles.brand}>
+            <AppLogo size={44} style={styles.brandLogo} />
+            <Text style={[styles.brandName, { color: colors.ink }]}>
+              Kada<Text style={[styles.brandAccent, { color: colors.brand }]}>Book</Text>
+            </Text>
+          </View>
+          <View style={styles.iconButton}>
+            <AnimatedIconPress
+              accessibilityLabel="Notifications"
+              onPress={() => navigation.navigate('Notifications')}
+              style={styles.iconPressInner}
+            >
+              <BellIcon />
+            </AnimatedIconPress>
+            <PulsingDot visible={hasToday} />
+          </View>
         </View>
+        <ExpiredRenewBar />
       </View>
-      <ExpiredRenewBar />
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.body}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onContentSizeChange={(_w, h) => setScrollContentHeight(h)}
       >
         <RemoteHomePromo />
         <HomeAnnouncementBanner />
@@ -541,12 +548,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRadius: 15,
+    shadowColor: '#123E92',
+    shadowOpacity: 0.16,
+    shadowRadius: 9,
+    elevation: 3,
   },
   iconPressInner: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dashboardBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   brand: {
     flexDirection: 'row',

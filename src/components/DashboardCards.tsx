@@ -135,7 +135,7 @@ function CardShell({
           onPressOut={onPressOut}
         >
           {backgroundSource ? (
-            <ImageBackground source={backgroundSource} resizeMode="cover" style={[styles.card, innerStyle]} imageStyle={styles.cardImage}>
+            <ImageBackground source={backgroundSource} resizeMode="stretch" style={[styles.card, innerStyle]} imageStyle={styles.cardImage}>
               {children}
             </ImageBackground>
           ) : (
