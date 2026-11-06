@@ -2,7 +2,8 @@
 export const loginLayout = {
   logo: {
     width: 132,
-    height: 121
+    height: 121,
+    marginTop: 0
   },
   shop: {
     height: 205,

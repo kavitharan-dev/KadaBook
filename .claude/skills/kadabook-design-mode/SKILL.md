@@ -54,10 +54,25 @@ Using `LoginScreen.tsx` as the template:
      adjusts both at once (use for things sized by width+height, like a logo).
    - `offsetKey: string` — adds a single vertical-drag handle for one value
      (use for a height, margin, or padding — anything that's one number).
-     A widget can only use one of `resizeKeys` or `offsetKey` per instance;
-     any OTHER keys in its `base` still get steppers in the panel even
-     without a drag handle (drag is for coarse adjustment, steppers are for
-     exact values — not every key needs a drag handle).
+     A widget **can use both at once** (e.g. the logo has `resizeKeys` for
+     size *and* `offsetKey="marginTop"` for position — both handles show
+     together when selected). Any OTHER keys in `base` still get steppers in
+     the panel even without a drag handle (drag is for coarse adjustment,
+     steppers are for exact values).
+   - **Give every widget both a size-ish key and a position-ish key where it
+     makes sense** (e.g. `{width, height, marginTop}`, or `{height,
+     marginBottom}`), not just whichever one was asked for first — the point
+     of this tool is that one widget exposes padding/margin/position/size
+     together so it's "easy to edit" in one place, not a series of one-off
+     additions.
+   - If the rendered value is multiplied by the screen's responsive `scale`
+     factor (e.g. `v.width * scale`, as the logo and shop image are), **pass
+     `scale={scale}` to `Designable` too**. Drag deltas are measured in real
+     screen pixels, which only equal design units when `scale` is 1 — without
+     dividing by it, dragging on a device where `scale != 1` moves the base
+     value by the wrong amount, and the saved value renders wrong-sized on a
+     *different* device than the one used to edit it. Omit the prop (defaults
+     to 1) for values that aren't scaled at render time.
 4. If the widget is rendered inside a shared component (not directly in the
    screen file — e.g. `LoginButton` is rendered from `LoginForm`, not
    `LoginScreen`), wrap it where it's actually rendered and thread the
@@ -86,6 +101,31 @@ Using `LoginScreen.tsx` as the template:
   builder, which runs its callbacks as normal JS-thread functions. Slightly
   less smooth than 60fps UI-thread tracking, but this is a dev tool, not a
   product animation — correctness and simplicity win here.
+- **Don't recreate `Gesture.Pan()` every render**: a naive `const pan =
+  Gesture.Pan()...` in the render body gets rebuilt on every re-render, and
+  `onUpdate` → `setValue` → re-render happens on every drag frame — so the
+  gesture was being torn down and reattached mid-drag, which reads as the
+  dragged value randomly jumping/shrinking instead of tracking the pointer.
+  Wrap each gesture in `useMemo` (deps: the ids/keys/scale it closes over,
+  not the reactive `value`) so the *same* gesture instance survives those
+  re-renders, and toggle `.enabled(...)` imperatively after the memo instead
+  of putting `selected` in the dependency array. Compute deltas from a
+  `useRef` snapshot taken in `onStart`, not from the reactive `value`, so
+  `onUpdate` has a single fixed baseline for the whole drag.
+- **A handle with a higher `zIndex` can still be unclickable**: `zIndex`
+  only resolves paint/hit-testing order *within a shared stacking context*.
+  `Designable`'s handles are positioned `absolute` inside a wrapper that
+  didn't otherwise establish a stacking context, so a plain sibling rendered
+  *after* it in the JSX (e.g. the wordmark `Text` under the logo) painted on
+  top and silently ate the handle's clicks on web, even with `zIndex: 10` on
+  the handle itself — `elementFromPoint` at the handle's own coordinates
+  returned the sibling text, not the handle. Fixed by giving the whole
+  `Designable` wrapper (`styles.wrap`) its own `zIndex`/`position` once a
+  handle is actually showing (`wrapSelected`), not just the handle. If a new
+  widget's handle looks right but drags do nothing, check this first —
+  `document.elementFromPoint(x, y)` in a browser console (or in a Playwright
+  `page.evaluate`) at the handle's coordinates is the fastest way to confirm
+  what's actually receiving the pointer.
 - **Stale panel after Save**: the overlay panel reads a `selectedBase`
   snapshot captured at tap-to-select time, not a live subscription to the
   config module. After a successful Save, `saveScreen` explicitly deselects

@@ -48,13 +48,13 @@ export function LoginScreen() {
     >
       {(scale) => <>
         <Animated.View style={[styles.brandBlock, logoStyle]}>
-          <Designable screen="login" id="logo" base={loginLayout.logo} resizeKeys={['width', 'height']}>
-            {(v) => <Image source={logo} resizeMode="contain" style={[styles.logo, { width: v.width * scale, height: v.height * scale }]} />}
+          <Designable screen="login" id="logo" base={loginLayout.logo} resizeKeys={['width', 'height']} offsetKey="marginTop" scale={scale}>
+            {(v) => <Image source={logo} resizeMode="contain" style={[styles.logo, { width: v.width * scale, height: v.height * scale, marginTop: v.marginTop * scale }]} />}
           </Designable>
           <Text style={styles.wordmark}>Kada<Text style={styles.wordmarkAccent}>Book</Text></Text>
           <Text style={styles.tagline}>Digital Accounting, Simplified for All Shops</Text>
         </Animated.View>
-        <Designable screen="login" id="shop" base={loginLayout.shop} offsetKey="height">
+        <Designable screen="login" id="shop" base={loginLayout.shop} offsetKey="height" scale={scale}>
           {(v) => <AnimatedImage source={shop} resizeMode="contain" style={[styles.shop, { height: v.height * scale, marginBottom: v.marginBottom * scale }, floatStyle]} />}
         </Designable>
         <FadeUp delay={timings.copyDelayMs} style={styles.cardWrap}>
