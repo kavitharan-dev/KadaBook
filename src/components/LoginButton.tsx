@@ -1,4 +1,5 @@
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated from 'react-native-reanimated';
 import { useButtonPulse } from '../hooks/useButtonPulse';
 import { useTheme } from '../context/ThemeContext';
@@ -29,11 +30,14 @@ export function LoginButton({ onPress, disabled, label = 'Login' }: LoginButtonP
         android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
         style={[styles.button, buttonStyle, disabled ? styles.pressed : null]}
       >
-        {disabled ? (
-          <ActivityIndicator color={colors.onFill} />
-        ) : (
-            <Text style={styles.label}>{label}</Text>
-        )}
+        <LinearGradient
+          colors={['#079EFA', '#0957E5', '#062FAE']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradient}
+        >
+          {disabled ? <ActivityIndicator color={colors.onFill} /> : <Text style={styles.label}>{label}</Text>}
+        </LinearGradient>
       </AnimatedPressable>
     </View>
   );
@@ -50,13 +54,15 @@ function loginButtonStyles(c: ColorPalette) {
     right: -6,
     bottom: -6,
     left: -6,
-    borderRadius: 18,
-    backgroundColor: c.brand,
+    borderRadius: 33,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
   },
   button: {
     height: 54,
-    borderRadius: 12,
+    borderRadius: 27,
     backgroundColor: c.brand,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -68,6 +74,12 @@ function loginButtonStyles(c: ColorPalette) {
     fontSize: 17,
     color: c.onFill,
     includeFontPadding: false,
+  },
+  gradient: {
+    flex: 1,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 };
 }
