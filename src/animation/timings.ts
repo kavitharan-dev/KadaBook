@@ -15,4 +15,10 @@ export const timings = {
   pulseScale: 1.03,
   floatHalfMs: 1500,
   floatY: -6,
+  /** Login screen's logo/wordmark/tagline: pop in, hold, then collapse away. */
+  brandPopFromScale: 0.55,
+  brandPopDamping: 9,
+  brandPopFadeMs: 380,
+  brandHoldMs: 950,
+  brandHideMs: 420,
 } as const;

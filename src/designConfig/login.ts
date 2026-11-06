@@ -6,7 +6,8 @@ export const loginLayout = {
     marginTop: 0
   },
   shop: {
-    height: 205,
+    height: 260,
+    marginTop: 16,
     marginBottom: -10
   },
   card: {

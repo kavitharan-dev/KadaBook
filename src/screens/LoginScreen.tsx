@@ -13,9 +13,9 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/LocaleContext';
 import { Designable } from '../devtools/designMode/Designable';
 import { loginLayout } from '../designConfig/login';
+import { useBrandIntro } from '../hooks/useBrandIntro';
 import { useFloatLoop } from '../hooks/useFloatLoop';
 import { useIconPress } from '../hooks/useIconPress';
-import { useLogoEntrance } from '../hooks/useLogoEntrance';
 import type { AuthStackParamList } from '../navigation/types';
 import { fonts } from '../theme/fonts';
 
@@ -32,7 +32,7 @@ export function LoginScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const floatStyle = useFloatLoop();
-  const logoStyle = useLogoEntrance();
+  const brandIntro = useBrandIntro();
   const langPress = useIconPress(0.92);
   const nextLocale = locale === 'en' ? 'ta' : locale === 'ta' ? 'si' : 'en';
   async function login(identity: string, password: string) { setError(null); setBusy(true); try { await signIn(identity, password); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Could not sign in.'); } finally { setBusy(false); } }
@@ -47,7 +47,7 @@ export function LoginScreen() {
       }
     >
       {(scale) => <>
-        <Animated.View style={[styles.brandBlock, logoStyle]}>
+        <Animated.View style={[styles.brandBlock, brandIntro.style]} onLayout={brandIntro.onLayout}>
           <Designable screen="login" id="logo" base={loginLayout.logo} resizeKeys={['width', 'height']} offsetKey="marginTop" scale={scale}>
             {(v) => <Image source={logo} resizeMode="contain" style={[styles.logo, { width: v.width * scale, height: v.height * scale, marginTop: v.marginTop * scale }]} />}
           </Designable>
@@ -55,7 +55,7 @@ export function LoginScreen() {
           <Text style={styles.tagline}>Digital Accounting, Simplified for All Shops</Text>
         </Animated.View>
         <Designable screen="login" id="shop" base={loginLayout.shop} offsetKey="height" scale={scale}>
-          {(v) => <AnimatedImage source={shop} resizeMode="contain" style={[styles.shop, { height: v.height * scale, marginBottom: v.marginBottom * scale }, floatStyle]} />}
+          {(v) => <AnimatedImage source={shop} resizeMode="contain" style={[styles.shop, { height: v.height * scale, marginTop: v.marginTop * scale, marginBottom: v.marginBottom * scale }, floatStyle]} />}
         </Designable>
         <FadeUp delay={timings.copyDelayMs} style={styles.cardWrap}>
           <Designable screen="login" id="card" base={loginLayout.card} offsetKey="paddingTop">
