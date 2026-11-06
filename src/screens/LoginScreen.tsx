@@ -19,9 +19,9 @@ import { useLogoEntrance } from '../hooks/useLogoEntrance';
 import type { AuthStackParamList } from '../navigation/types';
 import { fonts } from '../theme/fonts';
 
-const background = require('../../assets/auth-screens/auth-bg.png');
-const logo = require('../../assets/KadaBookLogo.png');
-const shop = require('../../assets/auth-screens/login-myshop-img.png');
+const background = require('../../assets/auth/auth-bg.png');
+const logo = require('../../assets/logo-main.png');
+const shop = require('../../assets/auth/login-myshop-img.png');
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 

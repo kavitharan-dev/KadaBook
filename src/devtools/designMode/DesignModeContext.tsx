@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { NativeModules, Platform } from 'react-native';
+import { getDevServerOrigin } from './devServerOrigin';
 
 export type NumMap = Record<string, number>;
 
@@ -22,17 +22,6 @@ export type DesignModeApi = {
 };
 
 const Ctx = createContext<DesignModeApi | null>(null);
-
-function getDevServerOrigin(): string {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return window.location.origin;
-  }
-  // Native (Expo Go / dev client): derive the Metro server's host from the
-  // bundle's own script URL. Avoids adding expo-constants just for this.
-  const scriptURL: string | undefined = (NativeModules as any)?.SourceCode?.scriptURL;
-  const match = scriptURL ? scriptURL.match(/^(https?:\/\/[^/]+)/) : null;
-  return match ? match[1] : '';
-}
 
 export function DesignModeProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState(false);

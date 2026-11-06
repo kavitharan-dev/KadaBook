@@ -268,7 +268,7 @@ export const en: Messages = {
       'Real email only (Gmail, etc.). Reset link from Firebase — check spam. Phone sign-up cannot receive email; use your phone + old password or sign up again with email.',
     forgotPhoneCloud:
       'Phone accounts do not get email. Sign in with the same phone number and password, or create a new account using a real email address.',
-    forgotLocal: 'This phone keeps the account locally. Set a new password for the same email or phone.',
+    forgotLocal: 'This account is kept on this phone. Connect to the internet to reset your password by email.',
     sendReset: 'Send Reset Link',
     updatePassword: 'Update Password',
     newPassword: 'New password',

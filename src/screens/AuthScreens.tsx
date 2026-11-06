@@ -23,6 +23,9 @@ import {
 } from '../components/LoginIcons';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/LocaleContext';
+import { Designable } from '../devtools/designMode/Designable';
+import { forgotPasswordLayout } from '../designConfig/forgotPassword';
+import { signUpLayout } from '../designConfig/signUp';
 import { useFloatLoop } from '../hooks/useFloatLoop';
 import { useIconPress } from '../hooks/useIconPress';
 import type { SignUpInput } from '../data/signUpTypes';
@@ -31,9 +34,9 @@ import { SHOP_TYPE_HELP, SHOP_TYPE_LABEL } from '../lib/shopType';
 import type { AuthStackParamList } from '../navigation/types';
 import { fonts } from '../theme/fonts';
 
-const background = require('../../assets/auth-screens/auth-bg.png');
-const lockImg = require('../../assets/auth-screens/forgotpassword-lock-img.png');
-const createShopImg = require('../../assets/auth-screens/createnew-shop-img.png');
+const background = require('../../assets/auth/auth-bg.png');
+const lockImg = require('../../assets/auth/forgotpassword-lock-img.png');
+const createShopImg = require('../../assets/auth/createnew-shop-img.png');
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const webInputFix = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : undefined;
@@ -109,8 +112,6 @@ export function ForgotPasswordScreen() {
   const { resetPassword, cloud } = useAuth();
   const { t } = useI18n();
   const [identity, setIdentity] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -119,9 +120,15 @@ export function ForgotPasswordScreen() {
   async function submit() {
     setError(null);
     setMessage(null);
+    if (!cloud) {
+      // No password field here anymore -- local/offline accounts can only be
+      // reset through the cloud's email-link flow.
+      setError('Connect to the internet to reset your password by email.');
+      return;
+    }
     setBusy(true);
     try {
-      setMessage(await resetPassword(identity, cloud ? undefined : password));
+      setMessage(await resetPassword(identity));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t((m) => m.common.errorGeneric));
     } finally {
@@ -137,40 +144,33 @@ export function ForgotPasswordScreen() {
     <AuthScreenFrame bg={background} onBack={() => navigation.goBack()}>
       {(scale) => (
         <>
-          <AnimatedImage source={lockImg} resizeMode="contain" style={[authStyles.hero, { height: 160 * scale }, floatStyle]} />
+          <Designable screen="forgotPassword" id="hero" base={forgotPasswordLayout.hero} offsetKey="height" scale={scale}>
+            {(v) => <AnimatedImage source={lockImg} resizeMode="contain" style={[authStyles.hero, { height: v.height * scale }, floatStyle]} />}
+          </Designable>
           <Text style={authStyles.title}>
             Forgot <Text style={authStyles.titleAccent}>Password?</Text>
           </Text>
           <Text style={authStyles.subtitle}>{copy}</Text>
-          <View style={authStyles.form}>
-            <AuthField
-              icon={<MailFieldIcon />}
-              value={identity}
-              onChangeText={setIdentity}
-              placeholder={t((m) => m.login.emailPhone)}
-              accessibilityLabel={t((m) => m.login.emailPhone)}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              returnKeyType={cloud ? 'done' : 'next'}
-            />
-            {cloud ? null : (
-              <AuthField
-                icon={<LockFieldIcon />}
-                value={password}
-                onChangeText={setPassword}
-                placeholder={t((m) => m.auth.newPassword)}
-                accessibilityLabel={t((m) => m.auth.newPassword)}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                returnKeyType="done"
-                rightElement={<PasswordToggle visible={showPassword} onToggle={() => setShowPassword((v) => !v)} />}
-              />
+          <Designable screen="forgotPassword" id="form" base={forgotPasswordLayout.form} offsetKey="marginTop">
+            {(v) => (
+              <View style={[authStyles.form, { marginTop: v.marginTop }]}>
+                <AuthField
+                  icon={<MailFieldIcon />}
+                  value={identity}
+                  onChangeText={setIdentity}
+                  placeholder={t((m) => m.login.emailPhone)}
+                  accessibilityLabel={t((m) => m.login.emailPhone)}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  returnKeyType="done"
+                />
+                <LoginButton disabled={busy} label={t((m) => m.auth.sendReset)} icon={<SendIcon />} onPress={submit} />
+                {message ? <Text style={authStyles.ok}>{message}</Text> : null}
+                {error ? <Text style={authStyles.error}>{error}</Text> : null}
+              </View>
             )}
-            <LoginButton disabled={busy} label={t((m) => m.auth.sendReset)} icon={<SendIcon />} onPress={submit} />
-            {message ? <Text style={authStyles.ok}>{message}</Text> : null}
-            {error ? <Text style={authStyles.error}>{error}</Text> : null}
-          </View>
+          </Designable>
           <FeatureRow />
         </>
       )}
@@ -271,36 +271,48 @@ export function SignUpScreen() {
     >
       {(scale) => (
         <>
-          <AnimatedImage source={createShopImg} resizeMode="contain" style={[authStyles.hero, { height: 140 * scale }, floatStyle]} />
+          <Designable screen="signUp" id="hero" base={signUpLayout.hero} offsetKey="height" scale={scale}>
+            {(v) => <AnimatedImage source={createShopImg} resizeMode="contain" style={[authStyles.hero, { height: v.height * scale }, floatStyle]} />}
+          </Designable>
           <Text style={authStyles.title}>
             Create New <Text style={authStyles.titleAccent}>Account</Text>
           </Text>
           <Text style={authStyles.subtitle}>Set up your shop and get started with KadaBook</Text>
-          <Stepper onStep2={step === 'shopType'} />
+          <Designable screen="signUp" id="stepper" base={signUpLayout.stepper} offsetKey="marginTop">
+            {(v) => (
+              <View style={{ marginTop: v.marginTop }}>
+                <Stepper onStep2={step === 'shopType'} />
+              </View>
+            )}
+          </Designable>
           {step === 'account' ? (
-            <View style={authStyles.panel}>
-              <AuthField icon={<StoreFieldIcon />} value={form.shopName} onChangeText={(v) => setForm((f) => ({ ...f, shopName: v }))} placeholder={t((m) => m.auth.shopName)} />
-              <AuthField icon={<PersonFieldIcon />} value={form.ownerName} onChangeText={(v) => setForm((f) => ({ ...f, ownerName: v }))} placeholder={t((m) => m.auth.ownerName)} />
-              <AuthField icon={<PhoneFieldIcon />} value={form.phone} onChangeText={(v) => setForm((f) => ({ ...f, phone: v }))} placeholder={t((m) => m.auth.phone)} keyboardType="phone-pad" />
-              <AuthField icon={<PinFieldIcon />} value={form.district} onChangeText={(v) => setForm((f) => ({ ...f, district: v }))} placeholder={t((m) => m.auth.district)} rightElement={<ChevronDownIcon />} />
-              <AuthField icon={<MailFieldIcon />} value={identity} onChangeText={setIdentity} placeholder={t((m) => m.login.emailPhone)} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" />
-              <AuthField
-                icon={<LockFieldIcon />}
-                value={password}
-                onChangeText={setPassword}
-                placeholder={t((m) => m.login.password)}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                rightElement={<PasswordToggle visible={showPassword} onToggle={() => setShowPassword((v) => !v)} />}
-              />
-              <LoginButton label="Continue  →" onPress={goToShopType} />
-              {error ? <Text style={authStyles.error}>{error}</Text> : null}
-              <Pressable onPress={() => navigation.goBack()} style={authStyles.link}>
-                <Text style={authStyles.linkText}>
-                  Already have an account? <Text style={authStyles.linkAccent}>Login</Text>
-                </Text>
-              </Pressable>
-            </View>
+            <Designable screen="signUp" id="panel" base={signUpLayout.panel} offsetKey="marginTop">
+              {(v) => (
+                <View style={[authStyles.panel, { marginTop: v.marginTop }]}>
+                  <AuthField icon={<StoreFieldIcon />} value={form.shopName} onChangeText={(v) => setForm((f) => ({ ...f, shopName: v }))} placeholder={t((m) => m.auth.shopName)} />
+                  <AuthField icon={<PersonFieldIcon />} value={form.ownerName} onChangeText={(v) => setForm((f) => ({ ...f, ownerName: v }))} placeholder={t((m) => m.auth.ownerName)} />
+                  <AuthField icon={<PhoneFieldIcon />} value={form.phone} onChangeText={(v) => setForm((f) => ({ ...f, phone: v }))} placeholder={t((m) => m.auth.phone)} keyboardType="phone-pad" />
+                  <AuthField icon={<PinFieldIcon />} value={form.district} onChangeText={(v) => setForm((f) => ({ ...f, district: v }))} placeholder={t((m) => m.auth.district)} rightElement={<ChevronDownIcon />} />
+                  <AuthField icon={<MailFieldIcon />} value={identity} onChangeText={setIdentity} placeholder={t((m) => m.login.emailPhone)} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" />
+                  <AuthField
+                    icon={<LockFieldIcon />}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder={t((m) => m.login.password)}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    rightElement={<PasswordToggle visible={showPassword} onToggle={() => setShowPassword((v) => !v)} />}
+                  />
+                  <LoginButton label="Continue  →" onPress={goToShopType} />
+                  {error ? <Text style={authStyles.error}>{error}</Text> : null}
+                  <Pressable onPress={() => navigation.goBack()} style={authStyles.link}>
+                    <Text style={authStyles.linkText}>
+                      Already have an account? <Text style={authStyles.linkAccent}>Login</Text>
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+            </Designable>
           ) : (
             <View style={authStyles.panel}>
               <Text style={authStyles.sectionLabel}>What kind of shop is this?</Text>

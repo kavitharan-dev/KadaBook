@@ -268,7 +268,7 @@ export const si: Messages = {
       'Real email (Gmail) only. Reset mail spam බලන්න. Phone sign-up-ට email නැත.',
     forgotPhoneCloud:
       'Phone ගිණුමට email reset නැත. Phone + password login, හෝ email ගිණුමක් සාදන්න.',
-    forgotLocal: 'මෙම දුරකථනය local ගිණුම. එම email/phone සඳහා නව මුරපදයක් තබන්න.',
+    forgotLocal: 'මෙම ගිණුම මෙම දුරකථනයේ local ලෙස තබා ඇත. Email මගින් මුරපදය යළි පිහිටුවීමට අන්තර්ජාලයට සම්බන්ධ වන්න.',
     sendReset: 'Reset Link යවන්න',
     updatePassword: 'මුරපදය යාවත්කාලීන කරන්න',
     newPassword: 'නව මුරපදය',

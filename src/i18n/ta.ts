@@ -268,7 +268,7 @@ export const ta: Messages = {
       'உண்மையான email (Gmail) மட்டும். Reset mail spam-ல் பாருங்கள். Phone sign-up-க்கு email வராது — phone + பழைய password use pannunga.',
     forgotPhoneCloud:
       'Phone கணக்குக்கு email reset இல்லை. அதே phone + password-ஆ login, அல்லது புதிய email கணக்கு உருவாக்குங்கள்.',
-    forgotLocal: 'இந்த போனில் local கணக்கு. அதே email/phone-க்கு புதிய கடவுச்சொல் அமைக்கவும்.',
+    forgotLocal: 'இந்த கணக்கு இந்த போனில் local-ஆ வச்சிருக்கு. Email மூலமா password reset பண்ண internet connect பண்ணவும்.',
     sendReset: 'Reset Link அனுப்பு',
     updatePassword: 'கடவுச்சொல் மாற்று',
     newPassword: 'புதிய கடவுச்சொல்',

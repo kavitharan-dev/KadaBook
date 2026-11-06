@@ -7,9 +7,11 @@ description: Wire a KadaBook screen into the in-app visual Design Mode (select a
 
 A dev-only, self-serve visual tuning tool, built because repeatedly round-tripping
 "make the logo bigger" / "move this up" through chat was the wrong workflow.
-Live in `src/devtools/designMode/`, first wired up on `LoginScreen`
-(`src/screens/LoginScreen.tsx`). Read that file as the reference
-implementation before wiring a new screen.
+Live in `src/devtools/designMode/`, wired up on all three auth screens
+(`src/screens/LoginScreen.tsx`, `src/screens/AuthScreens.tsx` for Forgot
+Password and Create Account) — `LoginScreen.tsx` is the clearest single-screen
+reference; `AuthScreens.tsx` shows the pattern repeated twice in one file with
+two separate `designConfig` files (`forgotPassword.ts`, `signUp.ts`).
 
 ## How it works end to end
 
@@ -139,3 +141,23 @@ Using `LoginScreen.tsx` as the template:
   (edited widget + every untouched one) before posting — posting a partial
   object truly does wipe the untouched keys (hit this once manually testing
   the endpoint directly with curl).
+- **Finding the dev server's address on native breaks the web build if done
+  carelessly**: on web, the dev server is just `window.location.origin`. On
+  native (phone via Expo Go/dev client), the only reliable way is RN's own
+  internal `react-native/Libraries/Core/Devtools/getDevServer` (reading
+  `NativeModules.SourceCode.scriptURL` directly doesn't resolve correctly
+  under the new architecture/TurboModules, so Save silently fails with no
+  visible error beyond the panel's red error line on every native test).
+  But that internal module imports a native-only `NativeSourceCode` spec
+  with **no web shim** — merely `require()`-ing it (even behind a runtime
+  `Platform.OS === 'web'` check, even in a `try/catch`) makes Metro fail to
+  bundle the *entire app* for web, because Metro resolves every
+  `require`/`import` it statically sees regardless of surrounding
+  conditionals. The fix is `src/devtools/designMode/devServerOrigin.ts`
+  (native implementation) + `devServerOrigin.web.ts` (web implementation,
+  just `window.location.origin`) as separate files — Metro's platform
+  extension resolution picks the right one per build and never even parses
+  the other, so the native-only import never reaches the web bundle. If a
+  dev-only feature needs a native module with no web equivalent, split it
+  into `.web.ts`/base-file pairs like this rather than branching at runtime
+  inside one file.
