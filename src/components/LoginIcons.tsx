@@ -87,6 +87,15 @@ export function ChevronDownIcon() {
   );
 }
 
+export function BackspaceIcon() {
+  return (
+    <Svg width={32} height={32} viewBox="0 0 32 32" fill="none">
+      <Path d="M12 7h14a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H12L4 16l8-9Z" stroke="#09265E" strokeWidth={2.25} strokeLinejoin="round" />
+      <Path d="m17 12 6 8m0-8-6 8" stroke="#09265E" strokeWidth={2.25} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function SendIcon() {
   return (
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">

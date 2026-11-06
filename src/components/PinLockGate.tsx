@@ -11,7 +11,8 @@ import {
 import { AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { AppLogo } from './AppLogo';
-import { Screen } from './ui';
+import { AuthScreenFrame } from './AuthScreenFrame';
+import { BackspaceIcon } from './LoginIcons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { fonts } from '../theme/fonts';
@@ -87,6 +88,7 @@ export function usePinLock() {
 }
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back'];
+const PIN_BACKGROUND = require('../../assets/auth-bg.png');
 
 export function PinLockGate({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
@@ -337,24 +339,24 @@ export function PinLockGate({ children }: { children: ReactNode }) {
             : 'Enter your PIN to continue.';
 
   const pinScreen = (
-    <Screen>
-      <View style={styles.wrap}>
-        <AppLogo size={80} />
-        <Text style={[styles.title, { color: colors.ink }]}>{title}</Text>
-        <Text style={[styles.subtitle, { color: colors.muted }]}>{subtitle}</Text>
+    <AuthScreenFrame bg={PIN_BACKGROUND}>
+      {(scale) => (
+      <View style={[styles.wrap, { paddingTop: 54 * scale }]}>
+        <AppLogo size={112 * scale} style={styles.logo} />
+        <Text style={[styles.title, { fontSize: 25 * scale }]}>{title}</Text>
+        <Text style={[styles.subtitle, { fontSize: 14 * scale }]}>{subtitle}</Text>
         <View style={styles.dots}>
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
             <View
               key={i}
               style={[
                 styles.dot,
-                { borderColor: colors.brand },
-                i < digits.length && { backgroundColor: colors.brand },
+                i < digits.length && styles.dotFilled,
               ]}
             />
           ))}
         </View>
-        <Text style={[styles.error, { color: colors.expenseText }]}>{error ?? ' '}</Text>
+        <Text style={styles.error}>{error ?? ' '}</Text>
         <View style={styles.pad}>
           {KEYS.map((k, index) => (
             <Pressable
@@ -363,33 +365,34 @@ export function PinLockGate({ children }: { children: ReactNode }) {
               onPress={() => (k === 'back' ? setDigits((v) => v.slice(0, -1)) : press(k))}
               style={({ pressed }) => [
                 styles.key,
-                { backgroundColor: k ? colors.keypad : 'transparent' },
-                pressed && { opacity: 0.6 },
+                !k && styles.keyEmpty,
+                pressed && { opacity: 0.72, transform: [{ scale: 0.97 }] },
               ]}
             >
-              <Text style={[styles.keyText, { color: colors.ink }]}>{k === 'back' ? '⌫' : k}</Text>
+              {k === 'back' ? <BackspaceIcon /> : <Text style={styles.keyText}>{k}</Text>}
             </Pressable>
           ))}
         </View>
         {mode === 'enter' && intent === 'none' ? (
           <Pressable onPress={forgot} style={styles.link}>
-            <Text style={{ color: colors.brand, fontFamily: fonts.semibold, fontSize: 14 }}>
+            <Text style={styles.linkText}>
               Forgot PIN? Sign in with email
             </Text>
           </Pressable>
         ) : null}
         {intent !== 'none' ? (
           <Pressable onPress={cancelChange} style={styles.link}>
-            <Text style={{ color: colors.brand, fontFamily: fonts.semibold, fontSize: 14 }}>Cancel</Text>
+            <Text style={styles.linkText}>Cancel</Text>
           </Pressable>
         ) : null}
       </View>
-    </Screen>
+      )}
+    </AuthScreenFrame>
   );
 
   // First unlock after opening the app: show only the PIN screen, nothing underneath.
   if (!everUnlocked && mode !== 'unlocked') {
-    return mode === 'loading' ? <Screen>{null}</Screen> : pinScreen;
+    return mode === 'loading' ? <View style={styles.fill} /> : pinScreen;
   }
 
   // Later locks keep the app mounted underneath, so the user returns to the same screen.
@@ -406,7 +409,7 @@ export function PinLockGate({ children }: { children: ReactNode }) {
         </View>
         {locked ? (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.white }]}>
-            {mode === 'loading' ? <Screen>{null}</Screen> : pinScreen}
+            {mode === 'loading' ? <View style={styles.fill} /> : pinScreen}
           </View>
         ) : null}
       </View>
@@ -421,60 +424,87 @@ const styles = StyleSheet.create({
   wrap: {
     flex: 1,
     alignItems: 'center',
-    paddingTop: 56,
-    paddingHorizontal: 24,
-    gap: 10,
+    paddingHorizontal: 20,
+  },
+  logo: {
+    marginBottom: 12,
   },
   title: {
-    marginTop: 8,
+    marginTop: 4,
     fontFamily: fonts.bold,
-    fontSize: 22,
+    color: '#09265E',
     textAlign: 'center',
+    lineHeight: 30,
+    letterSpacing: -0.5,
   },
   subtitle: {
+    marginTop: 8,
     fontFamily: fonts.regular,
-    fontSize: 14,
+    color: '#405A89',
     textAlign: 'center',
   },
   dots: {
     flexDirection: 'row',
-    gap: 16,
-    marginTop: 18,
+    gap: 17,
+    marginTop: 21,
   },
   dot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 2,
+    borderColor: '#075BE2',
+    backgroundColor: 'rgba(255,255,255,0.32)',
+  },
+  dotFilled: {
+    backgroundColor: '#075BE2',
   },
   error: {
     minHeight: 20,
+    marginTop: 5,
     fontFamily: fonts.semibold,
     fontSize: 13,
+    color: '#C43232',
     textAlign: 'center',
   },
   pad: {
-    width: 264,
+    width: 244,
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 12,
+    rowGap: 15,
     marginTop: 8,
   },
   key: {
-    width: 76,
-    height: 64,
+    width: 68,
+    height: 58,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.97)',
+    shadowColor: '#147EEA',
+    shadowOpacity: 0.32,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
+  },
+  keyEmpty: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   keyText: {
     fontFamily: fonts.semibold,
-    fontSize: 24,
+    fontSize: 31,
+    color: '#09265E',
   },
   link: {
-    marginTop: 12,
-    minHeight: 44,
+    marginTop: 28,
+    minHeight: 30,
     justifyContent: 'center',
   },
+  linkText: { color: '#075BE2', fontFamily: fonts.semibold, fontSize: 15, textAlign: 'center' },
 });
