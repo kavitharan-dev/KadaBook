@@ -40,3 +40,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local firebase / tooling noise
+.firebase/
+firestore-debug.log
+firebase-debug.log
