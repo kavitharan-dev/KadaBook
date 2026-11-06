@@ -1,10 +1,35 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { ImageBackground, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type ImageSourcePropType } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Animated from 'react-native-reanimated';
 import { ChevronLeftIcon } from './LoginIcons';
 import { useIconPress } from '../hooks/useIconPress';
 import { useResponsive } from '../lib/useResponsive';
+
+/**
+ * Mobile browsers autofill saved credentials with their own washed-out text
+ * color (the `-webkit-autofill` pseudo-class overrides our TextInput style,
+ * which can't be reached from an inline RN style object). Inject a real CSS
+ * rule once so autofilled text matches the app's own input color.
+ */
+function useWebAutofillFix() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (document.getElementById('kb-autofill-fix')) return;
+    const style = document.createElement('style');
+    style.id = 'kb-autofill-fix';
+    style.textContent = `
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus {
+        -webkit-text-fill-color: #102B59 !important;
+        caret-color: #102B59;
+        transition: background-color 9999s ease-in-out 0s;
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+}
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -40,6 +65,7 @@ export function AuthScreenFrame({ bg, onBack, topRight, children }: AuthScreenFr
   const bgHeight = Math.max(screenHeight, contentHeight);
 
   const backPress = useIconPress(0.9);
+  useWebAutofillFix();
 
   return (
     <View style={styles.screen}>
@@ -48,7 +74,7 @@ export function AuthScreenFrame({ bg, onBack, topRight, children }: AuthScreenFr
         <ImageBackground source={bg} resizeMode="cover" style={[styles.background, { height: bgHeight }]}>
           <View
             onLayout={(e) => setContentHeight(e.nativeEvent.layout.height)}
-            style={[styles.inner, { paddingTop: 28 * scale, paddingBottom: 34 * scale }, isTablet && { maxWidth: contentMaxWidth, alignSelf: 'center' }]}
+            style={[styles.inner, { paddingTop: 12 * scale, paddingBottom: 10 * scale }, isTablet && { maxWidth: contentMaxWidth, alignSelf: 'center' }]}
           >
             {onBack || topRight ? (
               <View style={styles.topbar}>

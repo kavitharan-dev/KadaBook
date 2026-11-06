@@ -79,25 +79,25 @@ function Feature({ icon, label }: { icon: ReactNode; label: string }) {
 
 const fieldStyle = {
   field: {
-    height: 53,
+    height: 47,
     backgroundColor: 'rgba(255,255,255,.92)',
     borderColor: '#CBD8EA',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 15,
+    borderRadius: 13,
+    paddingHorizontal: 14,
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 12,
+    gap: 11,
     shadowColor: '#244D8D',
     shadowOpacity: 0.08,
     shadowRadius: 5,
     elevation: 2,
   },
-  input: { flex: 1, height: 52, padding: 0, color: '#102B59', fontFamily: fonts.regular, fontSize: 16, includeFontPadding: false },
-  features: { marginTop: 22, flexDirection: 'row' as const, justifyContent: 'space-between' as const },
-  feature: { flex: 1, alignItems: 'center' as const, minHeight: 58 },
-  featureIconWrap: { height: 23, justifyContent: 'center' as const, alignItems: 'center' as const, marginBottom: 5 },
-  featureText: { color: '#122B59', fontFamily: fonts.semibold, fontSize: 10.5, lineHeight: 13, textAlign: 'center' as const, marginTop: 2 },
+  input: { flex: 1, height: 46, padding: 0, color: '#102B59', fontFamily: fonts.regular, fontSize: 15, includeFontPadding: false },
+  features: { marginTop: 16, flexDirection: 'row' as const, justifyContent: 'space-between' as const },
+  feature: { flex: 1, alignItems: 'center' as const, minHeight: 48 },
+  featureIconWrap: { height: 21, justifyContent: 'center' as const, alignItems: 'center' as const, marginBottom: 4 },
+  featureText: { color: '#122B59', fontFamily: fonts.semibold, fontSize: 10, lineHeight: 12, textAlign: 'center' as const, marginTop: 1 },
 };
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ export function ForgotPasswordScreen() {
     <AuthScreenFrame bg={background} onBack={() => navigation.goBack()}>
       {(scale) => (
         <>
-          <AnimatedImage source={lockImg} resizeMode="contain" style={[authStyles.hero, { height: 190 * scale }, floatStyle]} />
+          <AnimatedImage source={lockImg} resizeMode="contain" style={[authStyles.hero, { height: 160 * scale }, floatStyle]} />
           <Text style={authStyles.title}>
             Forgot <Text style={authStyles.titleAccent}>Password?</Text>
           </Text>
@@ -271,7 +271,7 @@ export function SignUpScreen() {
     >
       {(scale) => (
         <>
-          <AnimatedImage source={createShopImg} resizeMode="contain" style={[authStyles.hero, { height: 170 * scale }, floatStyle]} />
+          <AnimatedImage source={createShopImg} resizeMode="contain" style={[authStyles.hero, { height: 140 * scale }, floatStyle]} />
           <Text style={authStyles.title}>
             Create New <Text style={authStyles.titleAccent}>Account</Text>
           </Text>
@@ -338,15 +338,15 @@ export function SignUpScreen() {
 }
 
 const authStyles = {
-  hero: { width: '100%' as const, alignSelf: 'center' as const, marginBottom: 6 },
-  title: { marginTop: 4, color: '#09265E', fontFamily: fonts.bold, fontSize: 30, textAlign: 'center' as const, letterSpacing: -0.5 },
+  hero: { width: '100%' as const, alignSelf: 'center' as const, marginBottom: 2 },
+  title: { marginTop: 2, color: '#09265E', fontFamily: fonts.bold, fontSize: 26, textAlign: 'center' as const, letterSpacing: -0.5 },
   titleAccent: { color: '#0867F1' },
-  subtitle: { marginTop: 8, color: '#5D7195', fontFamily: fonts.regular, fontSize: 14, lineHeight: 20, textAlign: 'center' as const, paddingHorizontal: 8 },
-  form: { width: '100%', marginTop: 22, gap: 12 },
+  subtitle: { marginTop: 5, color: '#5D7195', fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 19, textAlign: 'center' as const, paddingHorizontal: 8 },
+  form: { width: '100%', marginTop: 14, gap: 10 },
   ok: { color: '#1F9D55', fontFamily: fonts.semibold, fontSize: 13, textAlign: 'center' as const },
   error: { color: '#D92D3A', fontFamily: fonts.regular, fontSize: 12, textAlign: 'center' as const },
 
-  stepper: { width: '100%', marginTop: 18, alignItems: 'center' as const },
+  stepper: { width: '100%', marginTop: 10, alignItems: 'center' as const },
   stepperDots: { flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const },
   stepDot: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: '#CBD8EA', alignItems: 'center' as const, justifyContent: 'center' as const, backgroundColor: '#FFFFFF' },
   stepDotActive: { backgroundColor: '#0A5FE5', borderColor: '#0A5FE5' },
@@ -358,8 +358,8 @@ const authStyles = {
   stepLabel: { color: '#7C8CAD', fontFamily: fonts.semibold, fontSize: 12.5, width: 110, textAlign: 'center' as const },
   stepLabelActive: { color: '#09265E' },
 
-  panel: { width: '100%', marginTop: 18, gap: 12 },
-  link: { marginTop: 2, minHeight: 40, alignItems: 'center' as const, justifyContent: 'center' as const },
+  panel: { width: '100%', marginTop: 12, gap: 10 },
+  link: { marginTop: 0, minHeight: 36, alignItems: 'center' as const, justifyContent: 'center' as const },
   linkText: { color: '#5D7195', fontFamily: fonts.semibold, fontSize: 13.5 },
   linkAccent: { color: '#075BE2', fontFamily: fonts.bold },
 
