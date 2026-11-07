@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, ImageBackground, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   BackIcon,
   BoxDuoIcon,
@@ -58,6 +57,8 @@ import { useTheme } from '../context/ThemeContext';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
+
+const appbarBg = require('../../assets/appbar-bg.png');
 
 const MODES = ['daily', 'weekly', 'monthly'] as const;
 type Mode = (typeof MODES)[number];
@@ -408,10 +409,9 @@ function ReportsHero({
   return (
     <Designable screen="reports" id="hero" base={reportsLayout.hero} offsetKey="marginTop">
       {(v) => (
-        <LinearGradient
-          colors={['#1D5FE0', '#3B82F6']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+        <ImageBackground
+          source={appbarBg}
+          resizeMode="cover"
           style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
         >
           <AnimatedIconPress
@@ -434,7 +434,7 @@ function ReportsHero({
           <AnimatedIconPress accessibilityRole="button" accessibilityLabel="Menu" onPress={onMenu} hitSlop={6} style={styles.heroBack}>
             <MenuIcon color="#FFFFFF" />
           </AnimatedIconPress>
-        </LinearGradient>
+        </ImageBackground>
       )}
     </Designable>
   );
@@ -461,6 +461,7 @@ function reportsStyles(c: ColorPalette) {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    overflow: 'hidden',
   },
   heroBack: {
     width: 38,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   FlatList,
+  ImageBackground,
   Keyboard,
   Modal,
   Platform,
@@ -15,7 +16,6 @@ import {
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { AccessBlockedModal } from '../components/GateModals';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
@@ -57,6 +57,8 @@ import type { AppStackParamList, TabParamList } from '../navigation/types';
 import type { ColorPalette } from '../theme/palettes';
 import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
+
+const appbarBg = require('../../assets/appbar-bg.png');
 
 type Product = ReturnType<typeof useBooks>['books']['products'][number];
 type Payload = {
@@ -315,10 +317,9 @@ export function ProductsScreen() {
 
       <Designable screen="products" id="hero" base={productsLayout.hero} offsetKey="marginTop">
         {(v) => (
-          <LinearGradient
-            colors={['#1D5FE0', '#3B82F6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          <ImageBackground
+            source={appbarBg}
+            resizeMode="cover"
             style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
           >
             <View style={styles.heroTop}>
@@ -361,7 +362,7 @@ export function ProductsScreen() {
                 </View>
               )}
             </Designable>
-          </LinearGradient>
+          </ImageBackground>
         )}
       </Designable>
 
@@ -718,6 +719,7 @@ function productsStyles(c: ColorPalette) {
       borderRadius: 24,
       padding: 18,
       gap: 16,
+      overflow: 'hidden',
     },
     heroTop: {
       flexDirection: 'row',
