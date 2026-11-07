@@ -8,7 +8,7 @@ import { SaleExtrasPanel, EMPTY_EXTRAS, buildExtras, extrasTotals, type SaleExtr
 import { CartLineRow } from '../components/CartLineRow';
 import { SaleCheckoutModal } from '../components/SaleCheckoutModal';
 import { Toast, useToast } from '../components/Toast';
-import { ScanIcon, SearchIcon, MoreIcon, CartDuoIcon, ReceiptDuoIcon, BackIcon, CheckIcon } from '../components/Icons';
+import { ScanIcon, SearchIcon, CartDuoIcon, ReceiptDuoIcon, BackIcon, CheckIcon } from '../components/Icons';
 import { gradients } from '../components/DashboardCards';
 import { Designable } from '../devtools/designMode/Designable';
 import { newSaleLayout } from '../designConfig/newSale';
@@ -480,7 +480,7 @@ export function NewSaleScreen() {
   const noticeText = notice ? <Text style={[styles.notice, { color: colors.saleText }]}>{notice}</Text> : null;
 
   return (
-    <Screen edgeToEdgeTop>
+    <Screen>
       <SaleCheckoutModal
         visible={checkoutOpen}
         done={justSavedAt !== null}
@@ -516,7 +516,7 @@ export function NewSaleScreen() {
         source={require('../../assets/appbar-bg.png')}
         resizeMode="cover"
         imageStyle={{ width: '100%', height: '100%' }}
-        style={[styles.gradientHeader, { paddingTop: insets.top + 10 }]}
+        style={styles.gradientHeader}
       >
         <View style={styles.headerRow}>
           {/* Back button */}
@@ -547,9 +547,6 @@ export function NewSaleScreen() {
                 <ScanIcon color="#fff" size={19} />
               </Pressable>
             ) : null}
-            <Pressable style={styles.headerIconBtn} accessibilityRole="button" accessibilityLabel="More">
-              <MoreIcon color="#fff" size={19} />
-            </Pressable>
           </View>
         </View>
 
@@ -648,13 +645,16 @@ export function NewSaleScreen() {
                   }}
                 />
               </View>
-              <Pressable
-                style={[styles.filterBtn, { backgroundColor: colors.white, borderColor: colors.hairline }]}
-                accessibilityRole="button"
-                accessibilityLabel="Filter"
-              >
-                <Text style={[styles.filterBtnText, { color: colors.muted }]}>⊟</Text>
-              </Pressable>
+              {canBarcode ? (
+                <Pressable
+                  onPress={() => setScannerOpen(true)}
+                  style={[styles.filterBtn, { backgroundColor: colors.white, borderColor: colors.hairline }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t((m) => m.sale.scanBarcode)}
+                >
+                  <ScanIcon color={colors.muted} size={18} />
+                </Pressable>
+              ) : null}
             </View>
 
             {/* ── Category Chips ── */}
@@ -976,8 +976,10 @@ function newSaleStyles(c: ColorPalette) {
 
   // ─── Gradient Header ───────────────────────────────────────────────
   gradientHeaderShadowWrap: {
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+    borderRadius: 26,
     backgroundColor: '#1D5FE0',
     shadowColor: '#0A2E7A',
     shadowOffset: { width: 0, height: 8 },
@@ -989,9 +991,9 @@ function newSaleStyles(c: ColorPalette) {
     width: '100%',
     backgroundColor: '#1D5FE0',
     paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 22,
-    borderBottomLeftRadius: 26,
-    borderBottomRightRadius: 26,
+    borderRadius: 26,
     overflow: 'hidden',
   },
   headerRow: {
@@ -1097,9 +1099,6 @@ function newSaleStyles(c: ColorPalette) {
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  filterBtnText: {
-    fontSize: 18,
   },
 
   // ─── Category Chips ───────────────────────────────────────────────
