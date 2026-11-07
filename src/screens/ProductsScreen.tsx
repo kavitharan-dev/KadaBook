@@ -21,7 +21,6 @@ import { AccessBlockedModal } from '../components/GateModals';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
 import {
   BackIcon,
-  BellIcon,
   BoxDuoIcon,
   ChevronRightIcon,
   CloseIcon,
@@ -32,8 +31,11 @@ import {
   ScanIcon,
   SearchIcon,
   TagIcon,
+  UtensilsIcon,
 } from '../components/Icons';
 import { ErrorText, FillButton, IconField, Screen } from '../components/ui';
+import { Designable } from '../devtools/designMode/Designable';
+import { productsLayout } from '../designConfig/products';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
 import { useI18n } from '../context/LocaleContext';
@@ -303,7 +305,7 @@ export function ProductsScreen() {
   const chips: { key: string; label: string; Icon?: typeof GridDuoIcon }[] = [
     { key: 'all', label: 'All', Icon: GridDuoIcon },
     { key: 'low', label: `Low stock${lowIds.size ? ` (${lowIds.size})` : ''}`, Icon: BoxDuoIcon },
-    ...categories.map((c) => ({ key: c, label: c, Icon: c.toLowerCase() === 'food' ? BellIcon : undefined })),
+    ...categories.map((c) => ({ key: c, label: c, Icon: c.toLowerCase() === 'food' ? UtensilsIcon : undefined })),
   ];
   const itemCount = books.products.length;
 
@@ -311,44 +313,57 @@ export function ProductsScreen() {
     <Screen>
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
 
-      <LinearGradient colors={['#6E28F2', '#8B4CF5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
-        <View style={styles.heroTop}>
-          <AnimatedIconPress
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            onPress={() => navigation.navigate('Home')}
-            hitSlop={6}
-            style={styles.heroBack}
+      <Designable screen="products" id="hero" base={productsLayout.hero} offsetKey="marginTop">
+        {(v) => (
+          <LinearGradient
+            colors={['#1D5FE0', '#3B82F6']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
           >
-            <BackIcon color="#FFFFFF" />
-          </AnimatedIconPress>
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroTitle} numberOfLines={1}>
-              {isKitchenShop ? 'Menu' : t((m) => m.productsTab.title)}
-            </Text>
-            <Text style={styles.heroSubtitle} numberOfLines={1}>
-              {isKitchenShop ? 'Manage your food menu items' : 'Manage your products'}
-            </Text>
-          </View>
-          <View style={styles.heroCountPill}>
-            <Text style={styles.heroCountText} numberOfLines={1}>
-              {itemCount} {itemCount === 1 ? 'Item' : 'Items'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.heroSearchWrap}>
-          <SearchIcon color="rgba(255,255,255,0.85)" size={18} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder={isKitchenShop ? 'Search menu...' : 'Search products...'}
-            placeholderTextColor="rgba(255,255,255,0.75)"
-            autoCapitalize="none"
-            underlineColorAndroid="transparent"
-            style={styles.heroSearchInput}
-          />
-        </View>
-      </LinearGradient>
+            <View style={styles.heroTop}>
+              <AnimatedIconPress
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                onPress={() => navigation.navigate('Home')}
+                hitSlop={6}
+                style={styles.heroBack}
+              >
+                <BackIcon color="#FFFFFF" />
+              </AnimatedIconPress>
+              <View style={styles.heroCopy}>
+                <Text style={styles.heroTitle} numberOfLines={1}>
+                  {isKitchenShop ? 'Menu' : t((m) => m.productsTab.title)}
+                </Text>
+                <Text style={styles.heroSubtitle} numberOfLines={1}>
+                  {isKitchenShop ? 'Manage your food menu items' : 'Manage your products'}
+                </Text>
+              </View>
+              <View style={styles.heroCountPill}>
+                <Text style={styles.heroCountText} numberOfLines={1}>
+                  {itemCount} {itemCount === 1 ? 'Item' : 'Items'}
+                </Text>
+              </View>
+            </View>
+            <Designable screen="products" id="search" base={productsLayout.search} offsetKey="minHeight">
+              {(sv) => (
+                <View style={[styles.heroSearchWrap, { minHeight: sv.minHeight, borderRadius: sv.borderRadius }]}>
+                  <SearchIcon color="rgba(255,255,255,0.85)" size={18} />
+                  <TextInput
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder={isKitchenShop ? 'Search menu...' : 'Search products...'}
+                    placeholderTextColor="rgba(255,255,255,0.75)"
+                    autoCapitalize="none"
+                    underlineColorAndroid="transparent"
+                    style={styles.heroSearchInput}
+                  />
+                </View>
+              )}
+            </Designable>
+          </LinearGradient>
+        )}
+      </Designable>
 
       <ScrollView
         horizontal
@@ -397,9 +412,9 @@ export function ProductsScreen() {
             <Pressable onPress={() => openEdit(item)} style={styles.row}>
               <View style={styles.rowThumb}>
                 {isMenuItem ? (
-                  <BellIcon color={colors.product} size={20} />
+                  <UtensilsIcon color={colors.brand} size={20} />
                 ) : (
-                  <ProductIcon color={colors.product} size={20} />
+                  <ProductIcon color={colors.brand} size={20} />
                 )}
               </View>
               <View style={styles.rowMain}>
@@ -438,8 +453,8 @@ export function ProductsScreen() {
 
       <View style={styles.footer}>
         <FillButton
-          label={isKitchenShop ? '+ Add food' : `+ ${t((m) => m.productsTab.add)}`}
-          color={colors.product}
+          label={isKitchenShop ? '+ Add Menu' : `+ ${t((m) => m.productsTab.add)}`}
+          color={colors.brand}
           onPress={openAdd}
         />
       </View>
@@ -457,40 +472,53 @@ export function ProductsScreen() {
             ]}
           >
             <View style={styles.sheetGrabber} />
-            <View style={styles.sheetHead}>
-              <View style={[styles.sheetAvatar, { backgroundColor: `${colors.product}1F` }]}>
-                {isKitchenShop && sellKind === 'menu' ? (
-                  <BellIcon color={colors.product} size={22} />
-                ) : (
-                  <ProductIcon color={colors.product} size={22} />
-                )}
-              </View>
-              <View style={styles.sheetHeadCopy}>
-                <Text style={styles.sheetTitle}>
-                  {isKitchenShop && sellKind === 'menu'
-                    ? editing
-                      ? 'Edit Menu Item'
-                      : 'Add Menu Item'
-                    : editing
-                      ? 'Edit Product'
-                      : t((m) => m.productsTab.add)}
-                </Text>
-                <Text style={styles.sheetSubtitle} numberOfLines={1}>
-                  {isKitchenShop && sellKind === 'menu'
-                    ? 'Add a new food or menu item'
-                    : 'Add a new product to your shop'}
-                </Text>
-              </View>
-              <AnimatedIconPress
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-                onPress={() => setFormOpen(false)}
-                hitSlop={10}
-                style={[styles.sheetCloseBtn, { backgroundColor: colors.canvas }]}
-              >
-                <CloseIcon color={colors.muted} size={18} />
-              </AnimatedIconPress>
-            </View>
+            <Designable screen="products" id="sheetHead" base={productsLayout.sheetHead} offsetKey="paddingTop">
+              {(hv) => (
+                <View style={[styles.sheetHead, { paddingTop: hv.paddingTop, paddingBottom: hv.paddingBottom }]}>
+                  <Designable screen="products" id="sheetAvatar" base={productsLayout.sheetAvatar} resizeKeys={['width', 'height']}>
+                    {(av) => (
+                      <View
+                        style={[
+                          styles.sheetAvatar,
+                          { width: av.width, height: av.height, borderRadius: av.borderRadius, backgroundColor: `${colors.brand}1F` },
+                        ]}
+                      >
+                        {isKitchenShop && sellKind === 'menu' ? (
+                          <UtensilsIcon color={colors.brand} size={22} />
+                        ) : (
+                          <ProductIcon color={colors.brand} size={22} />
+                        )}
+                      </View>
+                    )}
+                  </Designable>
+                  <View style={styles.sheetHeadCopy}>
+                    <Text style={styles.sheetTitle}>
+                      {isKitchenShop && sellKind === 'menu'
+                        ? editing
+                          ? 'Edit Menu Item'
+                          : 'Add Menu Item'
+                        : editing
+                          ? 'Edit Product'
+                          : t((m) => m.productsTab.add)}
+                    </Text>
+                    <Text style={styles.sheetSubtitle} numberOfLines={1}>
+                      {isKitchenShop && sellKind === 'menu'
+                        ? 'Add a new food or menu item'
+                        : 'Add a new product to your shop'}
+                    </Text>
+                  </View>
+                  <AnimatedIconPress
+                    accessibilityRole="button"
+                    accessibilityLabel="Close"
+                    onPress={() => setFormOpen(false)}
+                    hitSlop={10}
+                    style={[styles.sheetCloseBtn, { backgroundColor: colors.canvas }]}
+                  >
+                    <CloseIcon color={colors.muted} size={18} />
+                  </AnimatedIconPress>
+                </View>
+              )}
+            </Designable>
             <ScrollView
               contentContainerStyle={[styles.sheetBody, { paddingBottom: 28 + (kbHeight > 0 ? 24 : 0) }]}
               keyboardShouldPersistTaps="handled"
@@ -503,12 +531,12 @@ export function ProductsScreen() {
               <IconField
                 icon={
                   isKitchenShop && sellKind === 'menu' ? (
-                    <BellIcon color={colors.product} size={18} />
+                    <UtensilsIcon color={colors.brand} size={18} />
                   ) : (
-                    <ProductIcon color={colors.product} size={18} />
+                    <ProductIcon color={colors.brand} size={18} />
                   )
                 }
-                iconTint={colors.product}
+                iconTint={colors.brand}
                 value={name}
                 onChangeText={setName}
                 placeholder={isKitchenShop && sellKind === 'menu' ? 'Food name (e.g. Burger)' : t((m) => m.productsTab.name)}
@@ -647,13 +675,13 @@ export function ProductsScreen() {
                 label={
                   isKitchenShop && sellKind === 'menu'
                     ? editing
-                      ? 'Save food'
-                      : 'Add food'
+                      ? 'Save Menu Item'
+                      : 'Add Menu Item'
                     : editing
                       ? 'Save changes'
                       : t((m) => m.productsTab.add)
                 }
-                color={colors.product}
+                color={colors.brand}
                 onPress={save}
                 busy={busy}
               />
@@ -790,7 +818,7 @@ function productsStyles(c: ColorPalette) {
       gap: 6,
     },
     chipOn: {
-      backgroundColor: c.product,
+      backgroundColor: c.brand,
     },
     chipText: {
       fontFamily: fonts.semibold,
@@ -827,7 +855,7 @@ function productsStyles(c: ColorPalette) {
       width: 44,
       height: 44,
       borderRadius: 14,
-      backgroundColor: `${c.product}1A`,
+      backgroundColor: `${c.brand}1A`,
       alignItems: 'center',
       justifyContent: 'center',
     },
