@@ -20,44 +20,40 @@ export function AppTabBar({ state, navigation }: BottomTabBarProps) {
   const { t } = useI18n();
   const { colors } = useTheme();
   const { can } = useRole();
-  const bottomPad = Math.max(insets.bottom, 4);
 
   return (
-    <View
-      style={[
-        styles.bar,
-        {
-          paddingTop: 6,
-          paddingBottom: bottomPad,
-          borderTopColor: colors.hairline,
-          backgroundColor: colors.white,
-        },
-      ]}
-    >
-      {TABS.map((tab, index) => {
-        // Cashiers do not get the Products and Reports tabs.
-        if (tab.needs && !can(tab.needs)) return null;
-        const active = state.index === index;
-        const color = active ? colors.brand : colors.muted;
-        return (
-          <TabBarIcon
-            key={tab.name}
-            active={active}
-            color={color}
-            label={t((m) => m.tabs[tab.key])}
-            Icon={tab.Icon}
-            onPress={() => navigation.navigate(tab.name)}
-          />
-        );
-      })}
+    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <View style={[styles.bar, { backgroundColor: colors.white, boxShadow: '0px 10px 24px rgba(15,23,42,0.14)' }]}>
+        {TABS.map((tab, index) => {
+          // Cashiers do not get the Products and Reports tabs.
+          if (tab.needs && !can(tab.needs)) return null;
+          const active = state.index === index;
+          const color = active ? colors.brand : colors.muted;
+          return (
+            <TabBarIcon
+              key={tab.name}
+              active={active}
+              color={color}
+              label={t((m) => m.tabs[tab.key])}
+              Icon={tab.Icon}
+              onPress={() => navigation.navigate(tab.name)}
+            />
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: {
+    paddingTop: 6,
+    paddingHorizontal: 16,
+  },
   bar: {
-    borderTopWidth: 1,
+    borderRadius: 24,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    paddingVertical: 6,
   },
 });

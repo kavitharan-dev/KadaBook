@@ -40,8 +40,8 @@ export const statCardBg = {
   profit: require('../../assets/dashboard/db-profit-card-bg.png'),
 } as const;
 
-/** Sampled directly from assets/screens-ui/dashboard-ui.png's hero card — not shared, only HeroSalesCard uses this. */
-const HERO_GRADIENT = ['#002FBA', '#004ADF', '#0176F8'] as const;
+/** Sampled directly from assets/screens-ui/dashboard-ui.png's hero card — reused anywhere that wants the same brand-blue 3D gradient (e.g. the Close Day button). */
+export const HERO_GRADIENT = ['#002FBA', '#004ADF', '#0176F8'] as const;
 
 /** Colors sampled pixel-for-pixel from assets/screens-ui/dashboard-ui.png (Quick Action badges + the This Month cards). */
 export const gradients = {
@@ -386,7 +386,8 @@ export function GradientStatCard({
   label: string;
   value: number;
   chip: string;
-  viewLabel: string;
+  /** Optional trailing "label >" link in the foot row; omit to leave the chip on its own. */
+  viewLabel?: string;
   Icon: IconType;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
@@ -415,7 +416,7 @@ export function GradientStatCard({
             {chip}
           </Text>
         </View>
-        <ViewLink label={viewLabel} />
+        {viewLabel ? <ViewLink label={viewLabel} /> : null}
       </View>
     </CardShell>
   );

@@ -21,7 +21,7 @@ import {
 } from '../components/Icons';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
 import { HomeActionTile } from '../components/HomeActionTile';
-import { GradientStatCard, HeroSalesCard, gradients, statCardBg } from '../components/DashboardCards';
+import { GradientStatCard, HERO_GRADIENT, HeroSalesCard, gradients, statCardBg } from '../components/DashboardCards';
 import { FadeUp } from '../components/FadeUp';
 import { PulsingDot } from '../components/PulsingDot';
 import { AppLogo } from '../components/AppLogo';
@@ -470,7 +470,6 @@ export function HomeScreen() {
             label={t((m) => m.home.totalSales)}
             value={monthSales}
             chip={t((m) => m.home.salesCount, { count: monthSaleList.length })}
-            viewLabel={t((m) => m.home.view)}
             Icon={CartDuoIcon}
             onPress={() => navigation.navigate('Month')}
             style={styles.statHalf}
@@ -483,7 +482,6 @@ export function HomeScreen() {
             label={t((m) => m.home.totalExpenses)}
             value={monthExpenses}
             chip={monthPurchases > 0 ? `Stock ${formatRs(monthPurchases)}` : t((m) => m.home.expensesCount, { count: monthRunning.length })}
-            viewLabel={t((m) => m.home.view)}
             Icon={ReceiptDuoIcon}
             onPress={() => navigation.navigate('Month')}
             style={styles.statHalf}
@@ -496,7 +494,6 @@ export function HomeScreen() {
             label={t((m) => m.home.profit)}
             value={monthProfit}
             chip={t((m) => m.home.margin, { percent: margin })}
-            viewLabel={t((m) => m.home.view)}
             Icon={TrophyDuoIcon}
             onPress={() => navigation.navigate('Month')}
             style={styles.statFull}
@@ -512,7 +509,7 @@ export function HomeScreen() {
                 if (kitchen.viewAll) toast.show('error', t((m) => m.home.pickBranchFirst));
                 else setCloseModal(true);
               }}
-              color={colors.brand}
+              gradient={HERO_GRADIENT}
             />
           </View>
         ) : null}

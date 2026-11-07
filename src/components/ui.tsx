@@ -11,6 +11,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedIconPress } from './AnimatedIconPress';
 import { BackIcon } from './Icons';
 import { useTheme } from '../context/ThemeContext';
@@ -102,6 +103,7 @@ export function FillButton({
   label,
   onPress,
   color,
+  gradient,
   disabled,
   busy,
   icon,
@@ -109,6 +111,8 @@ export function FillButton({
   label: string;
   onPress: () => void;
   color?: string;
+  /** Optional 3D-style gradient fill (e.g. the Close Day button); overrides `color` when given. */
+  gradient?: readonly [string, string, ...string[]];
   disabled?: boolean;
   busy?: boolean;
   /** Optional leading icon, rendered before the label. */
@@ -123,9 +127,17 @@ export function FillButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.fill,
-        { backgroundColor: bg, opacity: disabled ? 0.55 : pressed ? 0.92 : 1 },
+        { backgroundColor: gradient ? 'transparent' : bg, opacity: disabled ? 0.55 : pressed ? 0.92 : 1 },
       ]}
     >
+      {gradient ? (
+        <LinearGradient
+          colors={gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[StyleSheet.absoluteFill, styles.fillGradient]}
+        />
+      ) : null}
       {busy ? (
         <ActivityIndicator color={colors.onFill} />
       ) : (
@@ -250,6 +262,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+  },
+  fillGradient: {
+    borderRadius: 14,
   },
   fillLabel: {
     fontFamily: fonts.semibold,
