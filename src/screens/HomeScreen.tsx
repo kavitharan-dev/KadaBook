@@ -22,6 +22,8 @@ import {
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
 import { HomeActionTile } from '../components/HomeActionTile';
 import { GradientStatCard, HERO_GRADIENT, HeroSalesCard, gradients, statCardBg } from '../components/DashboardCards';
+import { Designable } from '../devtools/designMode/Designable';
+import { homeLayout } from '../designConfig/home';
 import { FadeUp } from '../components/FadeUp';
 import { PulsingDot } from '../components/PulsingDot';
 import { AppLogo } from '../components/AppLogo';
@@ -502,16 +504,22 @@ export function HomeScreen() {
         </>
         ) : null}
         {salesOn && canCloseDay && (kitchen.viewAll || !todayClosed) ? (
-          <View style={styles.dayCloseBottom}>
-            <FillButton
-              label={t((m) => m.home.closeDay)}
-              onPress={() => {
-                if (kitchen.viewAll) toast.show('error', t((m) => m.home.pickBranchFirst));
-                else setCloseModal(true);
-              }}
-              gradient={HERO_GRADIENT}
-            />
-          </View>
+          <Designable screen="home" id="closeDayButton" base={homeLayout.closeDayButton} offsetKey="marginTop">
+            {(v) => (
+              <View style={[styles.dayCloseBottom, { marginTop: v.marginTop }]}>
+                <FillButton
+                  label={t((m) => m.home.closeDay)}
+                  onPress={() => {
+                    if (kitchen.viewAll) toast.show('error', t((m) => m.home.pickBranchFirst));
+                    else setCloseModal(true);
+                  }}
+                  gradient={HERO_GRADIENT}
+                  height={v.height}
+                  borderRadius={v.borderRadius}
+                />
+              </View>
+            )}
+          </Designable>
         ) : null}
       </ScrollView>
     </Screen>
@@ -520,7 +528,6 @@ export function HomeScreen() {
 
 const styles = StyleSheet.create({
   dayCloseBottom: {
-    marginTop: 18,
     marginBottom: 8,
   },
   dayCloseBanner: {

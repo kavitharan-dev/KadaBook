@@ -13,6 +13,17 @@ Password and Create Account) — `LoginScreen.tsx` is the clearest single-screen
 reference; `AuthScreens.tsx` shows the pattern repeated twice in one file with
 two separate `designConfig` files (`forgotPassword.ts`, `signUp.ts`).
 
+Also wired on the Home dashboard (`src/screens/HomeScreen.tsx`, `designConfig/home.ts`
+— currently just the `closeDayButton` widget: height, borderRadius, marginTop) and on
+the shared bottom tab bar (`src/components/AppTabBar.tsx`, `designConfig/tabBar.ts`
+— the `bar` widget: paddingTop/paddingHorizontal/paddingVertical/borderRadius/minBottomGap).
+The tab bar is a good example of the "shared chrome, not owned by any one screen" case:
+it's rendered once via the `Tab.Navigator`'s `tabBar` prop (`AuthenticatedAppStack.tsx`),
+not inside a screen file, so its `Designable` wraps it directly inside `AppTabBar.tsx`
+itself under its own pseudo-screen name (`"tabBar"`) rather than being threaded from
+wherever it's used — same reasoning as wrapping a shared component where it's rendered,
+just with no single screen to attribute it to.
+
 ## How it works end to end
 
 1. A screen's tunable numeric values live in `src/designConfig/<screen>.ts`

@@ -104,6 +104,8 @@ export function FillButton({
   onPress,
   color,
   gradient,
+  height,
+  borderRadius,
   disabled,
   busy,
   icon,
@@ -113,6 +115,10 @@ export function FillButton({
   color?: string;
   /** Optional 3D-style gradient fill (e.g. the Close Day button); overrides `color` when given. */
   gradient?: readonly [string, string, ...string[]];
+  /** Optional height override (e.g. a Design Mode-tunable call site). */
+  height?: number;
+  /** Optional corner-radius override (e.g. a Design Mode-tunable call site). */
+  borderRadius?: number;
   disabled?: boolean;
   busy?: boolean;
   /** Optional leading icon, rendered before the label. */
@@ -120,6 +126,7 @@ export function FillButton({
 }) {
   const { colors } = useTheme();
   const bg = color ?? colors.brand;
+  const radius = borderRadius ?? styles.fill.borderRadius;
   return (
     <Pressable
       accessibilityRole="button"
@@ -127,6 +134,8 @@ export function FillButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.fill,
+        height != null ? { height } : null,
+        borderRadius != null ? { borderRadius } : null,
         { backgroundColor: gradient ? 'transparent' : bg, opacity: disabled ? 0.55 : pressed ? 0.92 : 1 },
       ]}
     >
@@ -135,7 +144,7 @@ export function FillButton({
           colors={gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[StyleSheet.absoluteFill, styles.fillGradient]}
+          style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
         />
       ) : null}
       {busy ? (
@@ -262,9 +271,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-  },
-  fillGradient: {
-    borderRadius: 14,
   },
   fillLabel: {
     fontFamily: fonts.semibold,
