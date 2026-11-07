@@ -104,12 +104,15 @@ export function FillButton({
   color,
   disabled,
   busy,
+  icon,
 }: {
   label: string;
   onPress: () => void;
   color?: string;
   disabled?: boolean;
   busy?: boolean;
+  /** Optional leading icon, rendered before the label. */
+  icon?: ReactNode;
 }) {
   const { colors } = useTheme();
   const bg = color ?? colors.brand;
@@ -126,7 +129,10 @@ export function FillButton({
       {busy ? (
         <ActivityIndicator color={colors.onFill} />
       ) : (
-        <Text style={[styles.fillLabel, { color: colors.onFill }]}>{label}</Text>
+        <>
+          {icon}
+          <Text style={[styles.fillLabel, { color: colors.onFill }]}>{label}</Text>
+        </>
       )}
     </Pressable>
   );
@@ -240,8 +246,10 @@ const styles = StyleSheet.create({
   fill: {
     height: 54,
     borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
   },
   fillLabel: {
     fontFamily: fonts.semibold,

@@ -55,7 +55,13 @@ export function PrintButton({ phase, onPress, label, compact, large, iconOnly }:
         pressed && { opacity: 0.75 },
       ]}
     >
-      {busy ? <ActivityIndicator size="small" color={colors.onFill} /> : null}
+      {busy ? (
+        <ActivityIndicator size="small" color={colors.onFill} />
+      ) : phase === 'done' ? (
+        <CheckIcon color={colors.onFill} size={compact ? 14 : 18} />
+      ) : (
+        <PrinterIcon color={colors.onFill} size={compact ? 14 : 18} />
+      )}
       <Text style={[styles.text, { color: colors.onFill, fontSize: compact ? 12 : large ? 16 : 14 }]}>{text}</Text>
     </Pressable>
   );

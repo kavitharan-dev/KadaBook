@@ -3,10 +3,22 @@ import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { MenuIcon } from '../components/Icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  BackIcon,
+  BoxDuoIcon,
+  CalendarIcon,
+  ChatDuoIcon,
+  ClockIcon,
+  ExpenseIcon,
+  MenuIcon,
+  TrendDuoIcon,
+} from '../components/Icons';
 import { AccessBlockedModal } from '../components/GateModals';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
-import { FillButton, Header, Screen } from '../components/ui';
+import { FillButton, Screen } from '../components/ui';
+import { Designable } from '../devtools/designMode/Designable';
+import { reportsLayout } from '../designConfig/reports';
 import { PrintButton } from '../components/PrintButton';
 import { Toast, useToast } from '../components/Toast';
 import { FullReports } from '../components/FullReports';
@@ -162,7 +174,12 @@ export function ReportsScreen() {
   if (!reportsOn) {
     return (
       <Screen>
-        <Header title={t((m) => m.reportsTab.title)} onBack={() => navigation.navigate('Home')} />
+        <ReportsHero
+          title={t((m) => m.reportsTab.title)}
+          subtitle="Sales, expenses and stock at a glance"
+          onBack={() => navigation.navigate('Home')}
+          onMenu={() => navigation.navigate('More')}
+        />
         <Text style={{ padding: 20, fontFamily: fonts.regular }}>Reports are turned off.</Text>
       </Screen>
     );
@@ -172,34 +189,35 @@ export function ReportsScreen() {
     <Screen>
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
       <Toast toast={toast.toast} onHide={toast.hide} />
-      <Header
+      <ReportsHero
         title={t((m) => m.reportsTab.title)}
+        subtitle="Sales, expenses and stock at a glance"
         onBack={() => navigation.navigate('Home')}
-        right={
-          <AnimatedIconPress accessibilityLabel="Menu" onPress={() => navigation.navigate('More')} style={styles.iconButton}>
-            <MenuIcon />
-          </AnimatedIconPress>
-        }
+        onMenu={() => navigation.navigate('More')}
       />
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         {branches.length > 1 && !kitchen.branchLocked ? <BranchChips branches={branches} value={kitchen.scope} onChange={kitchen.setScope} /> : null}
         <View style={styles.modes}>
           {(
             [
-              ['daily', t((m) => m.reportsTab.daily)],
-              ['weekly', t((m) => m.reportsTab.weekly)],
-              ['monthly', t((m) => m.reportsTab.monthly)],
+              ['daily', t((m) => m.reportsTab.daily), ClockIcon],
+              ['weekly', t((m) => m.reportsTab.weekly), CalendarIcon],
+              ['monthly', t((m) => m.reportsTab.monthly), TrendDuoIcon],
             ] as const
-          ).map(([item, label]) => {
+          ).map(([item, label, ModeIcon]) => {
             const on = item === mode;
             return (
               <Pressable key={item} onPress={() => setMode(item)} style={[styles.mode, on && styles.modeOn]}>
+                <ModeIcon color={on ? colors.onFill : colors.muted} size={15} />
                 <Text style={[styles.modeText, on && styles.modeTextOn]}>{label}</Text>
               </Pressable>
             );
           })}
         </View>
-        <Text style={styles.date}>{mode === 'daily' ? formatDay(now) : `${formatDay(range.start)} – ${formatDay(range.end - 1)}`}</Text>
+        <View style={styles.dateRow}>
+          <CalendarIcon color={colors.brand} size={15} />
+          <Text style={styles.date}>{mode === 'daily' ? formatDay(now) : `${formatDay(range.start)} – ${formatDay(range.end - 1)}`}</Text>
+        </View>
         {mode === 'daily' ? (
           <View style={styles.metrics}>
             <Metric
@@ -266,6 +284,7 @@ export function ReportsScreen() {
         />
         <FillButton
           label={shareLabel}
+          icon={<ChatDuoIcon color={colors.onFill} size={18} />}
           color={shareFx.phase === 'done' ? colors.saleText : shareFx.phase === 'error' ? colors.expenseText : colors.saleText}
           busy={shareFx.phase === 'printing'}
           onPress={() => {
@@ -298,7 +317,12 @@ export function ReportsScreen() {
           expenseLabel={(category) => expenseCategoryMessage(messages, category)}
         />
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>{t((m) => m.reportsTab.recentExpenses)}</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionIconWrap, { backgroundColor: `${colors.expense}1A` }]}>
+              <ExpenseIcon color={colors.expense} size={14} />
+            </View>
+            <Text style={styles.sectionTitle}>{t((m) => m.reportsTab.recentExpenses)}</Text>
+          </View>
           <Pressable onPress={() => navigation.navigate('Expenses')} style={styles.viewAll}>
             <Text style={styles.viewAllText}>{t((m) => m.reportsTab.viewAll)}</Text>
           </Pressable>
@@ -313,7 +337,9 @@ export function ReportsScreen() {
                   styles.badge,
                   { backgroundColor: categoryWash[expense.category as keyof typeof categoryWash] ?? colors.keypad },
                 ]}
-              />
+              >
+                <ExpenseIcon color={colors.expense} size={16} />
+              </View>
               <View style={styles.expenseCopy}>
                 <Text style={styles.expenseName}>{expenseCategoryMessage(messages, expense.category)}</Text>
                 <Text style={styles.expenseTime}>{formatTime(expense.createdAt)}</Text>
@@ -323,7 +349,12 @@ export function ReportsScreen() {
           ))
         )}
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>{t((m) => m.settings.lowStock)}</Text>
+          <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionIconWrap, { backgroundColor: `${colors.expenseText}1A` }]}>
+              <BoxDuoIcon color={colors.expenseText} size={14} />
+            </View>
+            <Text style={styles.sectionTitle}>{t((m) => m.settings.lowStock)}</Text>
+          </View>
           <Pressable
             onPress={() => {
               void printLowStock();
@@ -345,15 +376,67 @@ export function ReportsScreen() {
         ) : (
           lowStock.map((product) => (
             <View key={product.id} style={styles.lowRow}>
-              <Text style={styles.expenseName}>{product.name}</Text>
-              <Text style={styles.expenseTime}>
-                {product.stock} {product.unit} · {formatRs(product.sellingPrice)}
-              </Text>
+              <View style={[styles.badge, { backgroundColor: `${colors.expenseText}1A` }]}>
+                <BoxDuoIcon color={colors.expenseText} size={16} />
+              </View>
+              <View style={styles.expenseCopy}>
+                <Text style={styles.expenseName}>{product.name}</Text>
+                <Text style={styles.expenseTime}>
+                  {product.stock} {product.unit} · {formatRs(product.sellingPrice)}
+                </Text>
+              </View>
             </View>
           ))
         )}
       </ScrollView>
     </Screen>
+  );
+}
+
+function ReportsHero({
+  title,
+  subtitle,
+  onBack,
+  onMenu,
+}: {
+  title: string;
+  subtitle: string;
+  onBack: () => void;
+  onMenu: () => void;
+}) {
+  const styles = useStyleSheet(reportsStyles);
+  return (
+    <Designable screen="reports" id="hero" base={reportsLayout.hero} offsetKey="marginTop">
+      {(v) => (
+        <LinearGradient
+          colors={['#1D5FE0', '#3B82F6']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
+        >
+          <AnimatedIconPress
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={onBack}
+            hitSlop={6}
+            style={styles.heroBack}
+          >
+            <BackIcon color="#FFFFFF" />
+          </AnimatedIconPress>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.heroSubtitle} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          </View>
+          <AnimatedIconPress accessibilityRole="button" accessibilityLabel="Menu" onPress={onMenu} hitSlop={6} style={styles.heroBack}>
+            <MenuIcon color="#FFFFFF" />
+          </AnimatedIconPress>
+        </LinearGradient>
+      )}
+    </Designable>
   );
 }
 
@@ -369,14 +452,41 @@ function Metric({ label, value, wash, ink }: { label: string; value: string; was
 
 function reportsStyles(c: ColorPalette) {
   return {
-  iconButton: {
-    width: 44,
-    height: 44,
+  hero: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+    borderRadius: 24,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  heroBack: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  heroCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  heroTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 21,
+    color: '#FFFFFF',
+  },
+  heroSubtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.85)',
+  },
   body: {
     paddingHorizontal: 16,
+    paddingTop: 4,
     paddingBottom: 8,
     gap: 12,
     flexGrow: 1,
@@ -390,8 +500,10 @@ function reportsStyles(c: ColorPalette) {
     height: 44,
     borderRadius: 22,
     backgroundColor: c.keypad,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
   modeOn: {
     backgroundColor: c.brand,
@@ -403,6 +515,11 @@ function reportsStyles(c: ColorPalette) {
   },
   modeTextOn: {
     color: c.onFill,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   date: {
     fontFamily: fonts.semibold,
@@ -473,6 +590,18 @@ function reportsStyles(c: ColorPalette) {
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sectionTitle: {
     fontFamily: fonts.bold,
     fontSize: 16,
@@ -502,6 +631,8 @@ function reportsStyles(c: ColorPalette) {
     width: 40,
     height: 40,
     borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   expenseCopy: {
     flex: 1,
@@ -522,9 +653,11 @@ function reportsStyles(c: ColorPalette) {
     color: c.expenseText,
   },
   lowRow: {
-    minHeight: 48,
-    justifyContent: 'center',
-    gap: 2,
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: c.rowLine,
   },
