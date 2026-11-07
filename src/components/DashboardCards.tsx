@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { Image, ImageBackground, Pressable, StyleSheet, Text, View, type ImageSourcePropType, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
@@ -21,7 +21,6 @@ import { fonts } from '../theme/fonts';
 
 type IconType = ComponentType<{ color?: string; size?: number }>;
 
-const DASHBOARD_CARD_BACKGROUND = require('../../assets/dashboard/dashboard-card-bg.png');
 const DASHBOARD_SHOP_IMAGE = require('../../assets/dashboard/dashboard-card-shop-img.png');
 
 export const gradients = {
@@ -99,6 +98,16 @@ function ShimmerSweep({ every = 4200 }: { every?: number }) {
   );
 }
 
+/** Soft diagonal light bands low in the card, standing in for the old background photo's wave art. */
+function WaveAccent() {
+  return (
+    <View pointerEvents="none" style={styles.waveClip}>
+      <View style={styles.waveBandBack} />
+      <View style={styles.waveBandFront} />
+    </View>
+  );
+}
+
 function CardShell({
   delay,
   gradient,
@@ -108,7 +117,6 @@ function CardShell({
   accessibilityLabel,
   style,
   innerStyle,
-  backgroundSource,
   children,
 }: {
   delay: number;
@@ -119,7 +127,6 @@ function CardShell({
   accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
   innerStyle?: StyleProp<ViewStyle>;
-  backgroundSource?: ImageSourcePropType;
   children: ReactNode;
 }) {
   const { style: pressStyle, onPressIn, onPressOut } = useIconPress(0.97);
@@ -134,18 +141,13 @@ function CardShell({
           onPressIn={onPressIn}
           onPressOut={onPressOut}
         >
-          {backgroundSource ? (
-            <ImageBackground source={backgroundSource} resizeMode="stretch" style={[styles.card, innerStyle]} imageStyle={styles.cardImage}>
-              {children}
-            </ImageBackground>
-          ) : (
-            <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.card, innerStyle]}>
-              <FloatingOrb size={150} style={styles.orbBig} />
-              <FloatingOrb size={90} style={styles.orbSmall} phase={900} />
-              <ShimmerSweep />
-              {children}
-            </LinearGradient>
-          )}
+          <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.card, innerStyle]}>
+            <FloatingOrb size={150} style={styles.orbBig} />
+            <FloatingOrb size={90} style={styles.orbSmall} phase={900} />
+            <WaveAccent />
+            <ShimmerSweep />
+            {children}
+          </LinearGradient>
         </Pressable>
       </Animated.View>
     </FadeUp>
@@ -242,7 +244,6 @@ export function HeroSalesCard({
       onLongPress={onLongPress}
       accessibilityLabel={`${title}. ${label}`}
       innerStyle={styles.heroCard}
-      backgroundSource={DASHBOARD_CARD_BACKGROUND}
     >
       <View style={styles.heroTop}>
         <View style={styles.heroTopText}>
@@ -375,9 +376,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
   },
-  cardImage: {
-    borderRadius: 20,
-  },
   heroCard: {
     padding: 16,
     minHeight: 170,
@@ -437,6 +435,34 @@ const styles = StyleSheet.create({
     bottom: -40,
     left: -25,
     backgroundColor: 'rgba(255,255,255,0.09)',
+  },
+  waveClip: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: '68%',
+    overflow: 'hidden',
+  },
+  waveBandBack: {
+    position: 'absolute',
+    left: '-15%',
+    right: '5%',
+    bottom: -78,
+    height: 150,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    transform: [{ rotate: '-5deg' }],
+  },
+  waveBandFront: {
+    position: 'absolute',
+    left: '-20%',
+    right: '-10%',
+    bottom: -46,
+    height: 120,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    transform: [{ rotate: '-4deg' }],
   },
   shimmer: {
     position: 'absolute',
