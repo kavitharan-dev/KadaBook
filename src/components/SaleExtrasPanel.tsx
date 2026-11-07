@@ -172,6 +172,8 @@ export function SaleExtrasPanel({
 
   const twoCols = allow.pay && allow.discount;
   const hasBalance = allow.pay && creditBalance > 0;
+  const receivedTyped = value.receivedText.trim() === '' ? null : Math.round(Number(value.receivedText) || 0);
+  const changeDue = allow.pay && receivedTyped !== null && receivedTyped > toPay ? receivedTyped - toPay : 0;
 
   return (
     <View
@@ -355,28 +357,39 @@ export function SaleExtrasPanel({
             <View
               style={[
                 styles.payableBar,
-                { backgroundColor: hasBalance ? colors.expenseWash : colors.saleWash },
+                {
+                  backgroundColor: hasBalance
+                    ? colors.expenseWash
+                    : changeDue > 0
+                      ? `${colors.brand}17`
+                      : colors.saleWash,
+                },
               ]}
             >
               <View style={styles.payableLeft}>
                 <View
                   style={[
                     styles.payableCheck,
-                    { backgroundColor: hasBalance ? colors.expenseText : colors.sale },
+                    {
+                      backgroundColor: hasBalance ? colors.expenseText : changeDue > 0 ? colors.brand : colors.sale,
+                    },
                   ]}
                 >
                   <CheckIcon color={colors.onFill} size={12} />
                 </View>
                 <Text style={[styles.payableLabel, { color: colors.ink }]}>
-                  {hasBalance ? 'Balance Amount' : 'Payable Amount'}
+                  {hasBalance ? 'Balance Amount' : changeDue > 0 ? 'Change' : 'Payable Amount'}
                 </Text>
               </View>
               <Text
-                style={[styles.payableValue, { color: hasBalance ? colors.expenseText : colors.saleText }]}
+                style={[
+                  styles.payableValue,
+                  { color: hasBalance ? colors.expenseText : changeDue > 0 ? colors.brand : colors.saleText },
+                ]}
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
-                {formatRs(hasBalance ? creditBalance : toPay)}
+                {formatRs(hasBalance ? creditBalance : changeDue > 0 ? changeDue : toPay)}
               </Text>
             </View>
             {hasBalance ? (

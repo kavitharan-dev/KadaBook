@@ -25,7 +25,7 @@ import type { PrintPhase } from '../lib/usePrintFeedback';
 import { BillReceipt } from './BillReceipt';
 import { PrintButton } from './PrintButton';
 import { ErrorText, FillButton } from './ui';
-import { CheckIcon, CloseIcon, SaleIcon } from './Icons';
+import { CheckIcon, SaleIcon } from './Icons';
 import { gradients } from './DashboardCards';
 import { fonts } from '../theme/fonts';
 
@@ -156,23 +156,11 @@ export function SaleCheckoutModal({
             <>
               <View style={styles.head}>
                 <View style={styles.headLeft}>
-                  <View style={[styles.headIcon, { backgroundColor: '#4D86ED' }]}>
-                    <SaleIcon color={colors.onFill} size={20} />
-                  </View>
                   <View style={styles.flex}>
                     <Text style={[styles.headTitle, { color: colors.ink }]}>{t((m) => m.sale.checkoutHeading)}</Text>
                     <Text style={[styles.headSubtitle, { color: colors.muted }]}>{t((m) => m.sale.checkoutTitle)}</Text>
                   </View>
                 </View>
-                <Pressable
-                  onPress={onClose}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                  style={[styles.close, { borderColor: colors.line }]}
-                >
-                  <CloseIcon color={colors.muted} size={16} />
-                </Pressable>
               </View>
               <ScrollView
                 ref={scrollRef}
@@ -277,10 +265,8 @@ const styles = StyleSheet.create({
   handle: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, marginBottom: 2 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   headLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
-  headIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   headTitle: { fontFamily: fonts.bold, fontSize: 17 },
   headSubtitle: { fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
-  close: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   body: { gap: 12, paddingBottom: 4 },
   wait: { paddingVertical: 48 },
 
