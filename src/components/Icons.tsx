@@ -129,6 +129,9 @@ export const FileExportDuoIcon = createDuoIcon(
   'M7 3h7l4 4v14H7zM14 3v4h4M9 14l3 3 3-3M12 10v7',
 );
 export const LogOutIcon = createIcon('M15 17l5-5-5-5M20 12H9M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7');
+export const StoreIcon = createIcon(
+  'M3 9l1.5-5h15L21 9M3 9v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9M9 20v-6h6v6M3 9h18',
+);
 export const DocumentDuoIcon = createDuoIcon(
   'M7 3h7l4 4v14H7z',
   'M7 3h7l4 4v14H7zM14 3v4h4M9 9h3M9 13h6M9 17h6',

@@ -8,10 +8,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   BookDuoIcon,
   CameraIcon,
+  ChevronRightIcon,
   ClipboardDuoIcon,
   DocumentDuoIcon,
   FileExportDuoIcon,
   GearIcon,
+  GlobeOutlineIcon,
   GridDuoIcon,
   HelpCircleIcon,
   InfoCircleIcon,
@@ -19,6 +21,7 @@ import {
   LogOutIcon,
   PrinterIcon,
   ShieldIcon,
+  StoreIcon,
   SunIcon,
   TrendDuoIcon,
   UsersDuoIcon,
@@ -36,6 +39,7 @@ import { useI18n } from '../context/LocaleContext';
 import { useShopGate } from '../context/ShopGateContext';
 import { displayAccount } from '../data/repository';
 import { resolveQuickSaleProfitPercent } from '../lib/dayClose';
+import { formatShortDay } from '../lib/format';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { APP_VERSION, BUILD_TAG } from '../config/build';
 import * as Updates from 'expo-updates';
@@ -124,6 +128,15 @@ function Row({
   );
 }
 
+/** Chevron that rotates to point down when the row it's attached to is expanded. */
+function DisclosureChevron({ open, color }: { open: boolean; color: string }) {
+  return (
+    <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+      <ChevronRightIcon color={color} size={20} />
+    </View>
+  );
+}
+
 /** Phone accounts are stored as <number>@phone.kadabook.app; show just the number. */
 const prettyAccount = (value: string) => value.replace(/@phone\.kadabook\.app$/i, '');
 
@@ -157,6 +170,7 @@ export function MoreScreen() {
 
   const [quickPctInput, setQuickPctInput] = useState(String(savedQuickPct));
   const [quickExpanded, setQuickExpanded] = useState(false);
+  const [langExpanded, setLangExpanded] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -197,16 +211,25 @@ export function MoreScreen() {
   const planName = subscription?.plan
     ? subscription.plan.charAt(0).toUpperCase() + subscription.plan.slice(1)
     : '';
-  const chip =
+  const expiresAt = subscription?.expiresAt;
+  const startsAt = subscription?.startsAt;
+  const daysLeft = expiresAt ? Math.max(0, Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000))) : null;
+  const chipTitle =
     status === 'trial'
-      ? `Trial · ${trialDays} days left`
+      ? 'Trial'
       : status === 'active'
-        ? planName
-          ? `Active · ${planName}`
-          : 'Active'
+        ? planName || 'Active'
         : status === 'expired'
           ? 'Plan expired'
           : String(status);
+  const chipDetail =
+    status === 'trial'
+      ? `${trialDays} days left`
+      : status === 'active' && expiresAt
+        ? `${startsAt ? `${formatShortDay(startsAt)} – ` : 'Till '}${formatShortDay(expiresAt)} · ${daysLeft}d left`
+        : status === 'expired' && expiresAt
+          ? `Expired ${formatShortDay(expiresAt)}`
+          : null;
   const initial = (currentName.trim()[0] ?? 'K').toUpperCase();
 
   return (
@@ -246,7 +269,8 @@ export function MoreScreen() {
           </View>
           <View style={styles.heroRow}>
             <View style={styles.chip}>
-              <Text style={styles.chipText}>{chip}</Text>
+              <Text style={styles.chipText}>{chipTitle}</Text>
+              {chipDetail ? <Text style={styles.chipDetailText}>{chipDetail}</Text> : null}
             </View>
             {isOwner ? (
               <Pressable onPress={() => navigation.navigate('UpgradePlan')} style={styles.upgradeBtn}>
@@ -268,7 +292,7 @@ export function MoreScreen() {
               title="Shop details"
               subtitle={currentName || 'Add your shop name'}
               onPress={() => navigation.navigate('ShopDetails')}
-              Icon={GearIcon}
+              Icon={StoreIcon}
               tint="#1D5FE0"
             />
             <Row
@@ -278,7 +302,7 @@ export function MoreScreen() {
               Icon={TrendDuoIcon}
               tint="#1D5FE0"
               last={!quickExpanded}
-              right={<Text style={styles.chevron}>{quickExpanded ? '⌄' : '›'}</Text>}
+              right={<DisclosureChevron open={quickExpanded} color={colors.muted} />}
             />
             {quickExpanded ? (
               <View style={[styles.cardPad, styles.rowLine]}>
@@ -302,25 +326,37 @@ export function MoreScreen() {
         ) : null}
 
         <Section label="Preferences" Icon={SunIcon} tint="#D97706">
-          <View style={styles.cardPad}>
-            <Text style={styles.fieldLabel}>{t((m) => m.more.language)}</Text>
-            <View style={styles.langRow}>
-              {LANGS.map((item) => {
-                const active = locale === item.code;
-                return (
-                  <Pressable
-                    key={item.code}
-                    onPress={() => setLocale(item.code)}
-                    style={[styles.langChip, active && styles.langChipOn]}
-                  >
-                    <Text style={[styles.langChipText, active && styles.langChipTextOn]}>
-                      {t((m) => m.more[item.labelKey])}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+          <Row
+            title={t((m) => m.more.language)}
+            subtitle={t((m) => m.more[LANGS.find((l) => l.code === locale)?.labelKey ?? 'langEn'])}
+            onPress={() => setLangExpanded((v) => !v)}
+            Icon={GlobeOutlineIcon}
+            tint="#D97706"
+            right={<DisclosureChevron open={langExpanded} color={colors.muted} />}
+          />
+          {langExpanded ? (
+            <View style={[styles.cardPad, styles.rowLine]}>
+              <View style={styles.langRow}>
+                {LANGS.map((item) => {
+                  const active = locale === item.code;
+                  return (
+                    <Pressable
+                      key={item.code}
+                      onPress={() => {
+                        setLocale(item.code);
+                        setLangExpanded(false);
+                      }}
+                      style={[styles.langChip, active && styles.langChipOn]}
+                    >
+                      <Text style={[styles.langChipText, active && styles.langChipTextOn]}>
+                        {t((m) => m.more[item.labelKey])}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
-          </View>
+          ) : null}
           <Row
             title={t((m) => m.settings.themeTitle)}
             subtitle={t((m) => m.settings.themeSub)}
@@ -611,6 +647,12 @@ function moreStyles(c: ColorPalette) {
       fontFamily: fonts.semibold,
       fontSize: 12,
       color: '#FFFFFF',
+    },
+    chipDetailText: {
+      marginTop: 1,
+      fontFamily: fonts.regular,
+      fontSize: 11,
+      color: 'rgba(255,255,255,0.85)',
     },
     upgradeBtn: {
       borderRadius: 12,

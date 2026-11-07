@@ -148,6 +148,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     borderBottomWidth: 1,
   },
   iconButton: {
