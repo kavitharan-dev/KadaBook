@@ -508,6 +508,7 @@ export function NewSaleScreen() {
       {/* ═══════════════════════════════════════════════════
           GRADIENT HEADER — New Sale + Create a new invoice
           ═══════════════════════════════════════════════════ */}
+      <View style={styles.gradientHeaderShadowWrap}>
       <ImageBackground
         source={require('../../assets/appbar-bg.png')}
         resizeMode="cover"
@@ -572,6 +573,7 @@ export function NewSaleScreen() {
           })}
         </View>
       </ImageBackground>
+      </View>
 
       {/* Day-closed banner */}
       {todayClosed ? (
@@ -963,11 +965,23 @@ function newSaleStyles(c: ColorPalette) {
   return {
 
   // ─── Gradient Header ───────────────────────────────────────────────
+  gradientHeaderShadowWrap: {
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+    backgroundColor: '#1D5FE0',
+    shadowColor: '#0A2E7A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
+  },
   gradientHeader: {
     width: '100%',
     backgroundColor: '#1D5FE0',
     paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingBottom: 22,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
     overflow: 'hidden',
   },
   headerRow: {
