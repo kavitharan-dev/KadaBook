@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import {
   PAYMENT_MODE_LABEL,
@@ -100,6 +100,9 @@ export function extrasTotals(value: SaleExtrasState, allow: ExtrasAllow, subtota
   return { off, toPay, creditBalance };
 }
 
+/** react-native-web draws its own black focus ring on inputs; our fields already show focus via border/icon tint. */
+const webInputFix = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : undefined;
+
 const MODES: PaymentMode[] = ['cash', 'card', 'credit'];
 const MODE_ICON = { cash: CashIcon, card: CardIcon, credit: CalendarIcon };
 
@@ -168,6 +171,7 @@ export function SaleExtrasPanel({
   }
 
   const twoCols = allow.pay && allow.discount;
+  const hasBalance = allow.pay && creditBalance > 0;
 
   return (
     <View
@@ -333,6 +337,7 @@ export function SaleExtrasPanel({
                       styles.input,
                       styles.inputFull,
                       { borderColor: colors.line, backgroundColor: colors.keypad, color: colors.ink },
+                      webInputFix,
                     ]}
                   />
                 </View>
@@ -347,28 +352,40 @@ export function SaleExtrasPanel({
                 <Text style={[styles.totalsText, { color: colors.muted }]}>Discount -{formatRs(off)}</Text>
               </View>
             ) : null}
-            <View style={[styles.payableBar, { backgroundColor: colors.saleWash }]}>
+            <View
+              style={[
+                styles.payableBar,
+                { backgroundColor: hasBalance ? colors.expenseWash : colors.saleWash },
+              ]}
+            >
               <View style={styles.payableLeft}>
-                <View style={[styles.payableCheck, { backgroundColor: colors.sale }]}>
+                <View
+                  style={[
+                    styles.payableCheck,
+                    { backgroundColor: hasBalance ? colors.expenseText : colors.sale },
+                  ]}
+                >
                   <CheckIcon color={colors.onFill} size={12} />
                 </View>
-                <Text style={[styles.payableLabel, { color: colors.ink }]}>Payable Amount</Text>
+                <Text style={[styles.payableLabel, { color: colors.ink }]}>
+                  {hasBalance ? 'Balance Amount' : 'Payable Amount'}
+                </Text>
               </View>
-              <Text style={[styles.payableValue, { color: colors.saleText }]} numberOfLines={1} adjustsFontSizeToFit>
-                {formatRs(toPay)}
+              <Text
+                style={[styles.payableValue, { color: hasBalance ? colors.expenseText : colors.saleText }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatRs(hasBalance ? creditBalance : toPay)}
               </Text>
             </View>
-            {allow.pay && creditBalance > 0 ? (
+            {hasBalance ? (
               <View style={styles.pills}>
                 <View style={[styles.pill, { backgroundColor: colors.saleWash }]}>
                   <Text style={[styles.pillLabel, { color: colors.saleText }]}>Received</Text>
                   <Text style={[styles.pillValue, { color: colors.saleText }]}>
                     {formatRs(toPay - creditBalance)}
                   </Text>
-                </View>
-                <View style={[styles.pill, { backgroundColor: colors.expenseWash }]}>
-                  <Text style={[styles.pillLabel, { color: colors.expenseText }]}>To credit book</Text>
-                  <Text style={[styles.pillValue, { color: colors.expenseText }]}>{formatRs(creditBalance)}</Text>
                 </View>
               </View>
             ) : null}

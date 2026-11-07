@@ -156,7 +156,7 @@ export function SaleCheckoutModal({
             <>
               <View style={styles.head}>
                 <View style={styles.headLeft}>
-                  <View style={[styles.headIcon, { backgroundColor: colors.brand }]}>
+                  <View style={[styles.headIcon, { backgroundColor: '#4D86ED' }]}>
                     <SaleIcon color={colors.onFill} size={20} />
                   </View>
                   <View style={styles.flex}>

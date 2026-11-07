@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +18,9 @@ import { BackIcon } from './Icons';
 import { useTheme } from '../context/ThemeContext';
 import type { ColorPalette } from '../theme/palettes';
 import { fonts } from '../theme/fonts';
+
+/** react-native-web draws its own black focus ring on inputs; our fields already show focus via border/icon tint. */
+const webInputFix = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : undefined;
 
 export function Screen({
   children,
@@ -93,6 +97,7 @@ export function Field(props: TextInputProps) {
           backgroundColor: colors.white,
           color: colors.ink,
         },
+        webInputFix,
         props.style,
       ]}
     />
@@ -175,7 +180,7 @@ export function IconField({
         {...inputProps}
         placeholderTextColor={colors.placeholder}
         underlineColorAndroid="transparent"
-        style={[styles.iconFieldInput, { color: colors.ink }, style]}
+        style={[styles.iconFieldInput, { color: colors.ink }, webInputFix, style]}
       />
     </View>
   );
