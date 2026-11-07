@@ -46,18 +46,19 @@ export function Header({
 }) {
   const { colors } = useTheme();
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { borderBottomColor: colors.hairline }]}>
       {onBack ? (
         <AnimatedIconPress
           accessibilityRole="button"
           accessibilityLabel="Back"
           onPress={onBack}
-          style={styles.iconButton}
+          hitSlop={6}
+          style={[styles.iconButton, { backgroundColor: colors.canvas, borderColor: colors.hairline }]}
         >
-          <BackIcon />
+          <BackIcon color={colors.ink} />
         </AnimatedIconPress>
       ) : (
-        <View style={styles.iconButton} />
+        <View style={styles.iconButtonSpacer} />
       )}
       <Text style={[styles.headerTitle, { color: colors.ink }]} numberOfLines={1}>
         {title}
@@ -143,15 +144,23 @@ const styles = StyleSheet.create({
   },
   header: {
     minHeight: 56,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    borderBottomWidth: 1,
   },
   iconButton: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconButtonSpacer: {
+    width: 38,
+    height: 38,
   },
   headerEnd: {
     minWidth: 44,
