@@ -148,6 +148,7 @@ export const ta: Messages = {
     calcEnterAmount: '0-க்கு மேல் தொகை உள்ளிடவும்.',
     calcTotal: 'மொத்தம்',
     calcSave: 'இன்றைய விற்பனையில் சேர்',
+    checkoutHeading: 'விற்பனையை முடி',
     checkoutTitle: 'வாடிக்கையாளர் மற்றும் கட்டணம்',
     checkoutConfirm: 'விற்பனையை சேமி',
     billDetails: 'பில் விவரங்கள்',

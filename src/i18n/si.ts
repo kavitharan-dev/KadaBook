@@ -148,6 +148,7 @@ export const si: Messages = {
     calcEnterAmount: '0 ට වඩා මුදලක් ඇතුළත් කරන්න.',
     calcTotal: 'මුළු',
     calcSave: 'අද විකුණුම් වලට එකතු කරන්න',
+    checkoutHeading: 'විකුණුම සම්පූර්ණ කරන්න',
     checkoutTitle: 'පාරිභෝගිකයා සහ ගෙවීම',
     checkoutConfirm: 'විකුණුම සුරකින්න',
     billDetails: 'බිල්පත් විස්තර',

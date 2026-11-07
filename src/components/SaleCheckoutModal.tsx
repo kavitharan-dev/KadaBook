@@ -15,6 +15,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useI18n } from '../context/LocaleContext';
@@ -24,6 +25,8 @@ import type { PrintPhase } from '../lib/usePrintFeedback';
 import { BillReceipt } from './BillReceipt';
 import { PrintButton } from './PrintButton';
 import { ErrorText, FillButton } from './ui';
+import { CheckIcon, CloseIcon, SaleIcon } from './Icons';
+import { gradients } from './DashboardCards';
 import { fonts } from '../theme/fonts';
 
 export type CheckoutTotals = { subtotal: number; off: number; toPay: number; creditBalance: number };
@@ -152,15 +155,23 @@ export function SaleCheckoutModal({
           <View style={[styles.handle, { backgroundColor: colors.line }]} />
             <>
               <View style={styles.head}>
-                <Text style={[styles.kicker, { color: colors.muted }]}>{t((m) => m.sale.checkoutTitle)}</Text>
+                <View style={styles.headLeft}>
+                  <View style={[styles.headIcon, { backgroundColor: colors.brand }]}>
+                    <SaleIcon color={colors.onFill} size={20} />
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={[styles.headTitle, { color: colors.ink }]}>{t((m) => m.sale.checkoutHeading)}</Text>
+                    <Text style={[styles.headSubtitle, { color: colors.muted }]}>{t((m) => m.sale.checkoutTitle)}</Text>
+                  </View>
+                </View>
                 <Pressable
                   onPress={onClose}
                   hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close"
-                  style={[styles.close, { backgroundColor: colors.keypad }]}
+                  style={[styles.close, { borderColor: colors.line }]}
                 >
-                  <Text style={[styles.closeText, { color: colors.muted }]}>✕</Text>
+                  <CloseIcon color={colors.muted} size={16} />
                 </Pressable>
               </View>
               <ScrollView
@@ -175,8 +186,9 @@ export function SaleCheckoutModal({
                 </View>
               </ScrollView>
               <FillButton
-                label={`${t((m) => m.sale.checkoutConfirm)} · ${formatRs(totals.toPay)}`}
-                color={colors.sale}
+                label={`${t((m) => m.sale.checkoutConfirm)} (${formatRs(totals.toPay)})`}
+                gradient={gradients.green}
+                icon={<CheckIcon color={colors.onFill} size={18} />}
                 onPress={onConfirm}
                 busy={busy}
               />
@@ -189,41 +201,31 @@ export function SaleCheckoutModal({
   );
 }
 
-/** Big "To pay" amount, with the received / credit split once part of it goes on credit. */
+/** The raw sale amount, as a gradient hero card with a cart icon chip. */
 function AmountHero({ totals, compact }: { totals: CheckoutTotals; compact?: boolean }) {
   const { colors } = useTheme();
-  const { subtotal, off, toPay, creditBalance } = totals;
   return (
-    <View style={[styles.hero, { backgroundColor: colors.gradientTop, borderColor: colors.hairline }]}>
-      <Text style={[styles.heroLabel, { color: colors.muted }]}>TO PAY</Text>
-      <Text
-        style={[styles.heroAmount, compact ? styles.heroAmountSmall : null, { color: colors.ink }]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {formatRs(toPay)}
-      </Text>
-      {off > 0 ? (
-        <Text style={[styles.heroNote, { color: colors.muted }]}>
-          <Text style={styles.strike}>{formatRs(subtotal)}</Text> · {formatRs(off)} off
+    <LinearGradient
+      colors={[colors.gradientTop, colors.white]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 0.4 }}
+      style={[styles.hero, { borderColor: colors.hairline }]}
+    >
+      <View style={[styles.heroIcon, { backgroundColor: colors.brand }]}>
+        <SaleIcon color={colors.onFill} size={22} />
+      </View>
+      <View style={styles.heroDivider} />
+      <View style={styles.flex}>
+        <Text style={[styles.heroLabel, { color: colors.muted }]}>Sale Amount</Text>
+        <Text
+          style={[styles.heroAmount, compact ? styles.heroAmountSmall : null, { color: colors.ink }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          {formatRs(totals.subtotal)}
         </Text>
-      ) : null}
-      {creditBalance > 0 ? (
-        <View style={styles.pills}>
-          <Pill label="Received" value={formatRs(toPay - creditBalance)} bg={colors.saleWash} fg={colors.saleText} />
-          <Pill label="To credit book" value={formatRs(creditBalance)} bg={colors.expenseWash} fg={colors.expenseText} />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function Pill({ label, value, bg, fg }: { label: string; value: string; bg: string; fg: string }) {
-  return (
-    <View style={[styles.pill, { backgroundColor: bg }]}>
-      <Text style={[styles.pillLabel, { color: fg }]}>{label}</Text>
-      <Text style={[styles.pillValue, { color: fg }]}>{value}</Text>
-    </View>
+      </View>
+    </LinearGradient>
   );
 }
 
@@ -273,23 +275,29 @@ const styles = StyleSheet.create({
     elevation: 18,
   },
   handle: { alignSelf: 'center', width: 44, height: 5, borderRadius: 3, marginBottom: 2 },
-  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  kicker: { fontFamily: fonts.semibold, fontSize: 14 },
-  close: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  closeText: { fontSize: 14, fontFamily: fonts.bold },
+  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  headLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  headIcon: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  headTitle: { fontFamily: fonts.bold, fontSize: 17 },
+  headSubtitle: { fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
+  close: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   body: { gap: 12, paddingBottom: 4 },
   wait: { paddingVertical: 48 },
 
-  hero: { borderRadius: 18, borderWidth: 1, paddingVertical: 16, paddingHorizontal: 16, alignItems: 'center', gap: 2 },
-  heroLabel: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 1.2 },
-  heroAmount: { fontFamily: fonts.bold, fontSize: 38 },
-  heroAmountSmall: { fontSize: 26 },
-  heroNote: { fontFamily: fonts.regular, fontSize: 13 },
-  strike: { textDecorationLine: 'line-through' },
-  pills: { flexDirection: 'row', gap: 8, marginTop: 10, alignSelf: 'stretch' },
-  pill: { flex: 1, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
-  pillLabel: { fontFamily: fonts.semibold, fontSize: 11 },
-  pillValue: { fontFamily: fonts.bold, fontSize: 16 },
+  hero: {
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  heroIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  heroDivider: { width: 1, height: 40, backgroundColor: 'rgba(17,24,39,0.08)' },
+  heroLabel: { fontFamily: fonts.semibold, fontSize: 12 },
+  heroAmount: { fontFamily: fonts.bold, fontSize: 30, marginTop: 2 },
+  heroAmountSmall: { fontSize: 22 },
 
   actions: { flexDirection: 'row', gap: 10 },
   newBtn: {

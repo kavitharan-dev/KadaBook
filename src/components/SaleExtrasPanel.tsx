@@ -11,6 +11,8 @@ import {
 import { formatRs } from '../lib/format';
 import { phoneKey } from '../lib/shopPlus';
 import { fonts } from '../theme/fonts';
+import { CalendarIcon, CardIcon, CashIcon, CheckIcon, PersonIcon, PhoneIcon } from './Icons';
+import { IconField } from './ui';
 
 export type SaleExtrasState = {
   paymentMode: PaymentMode;
@@ -99,6 +101,7 @@ export function extrasTotals(value: SaleExtrasState, allow: ExtrasAllow, subtota
 }
 
 const MODES: PaymentMode[] = ['cash', 'card', 'credit'];
+const MODE_ICON = { cash: CashIcon, card: CardIcon, credit: CalendarIcon };
 
 export function SaleExtrasPanel({
   value,
@@ -164,7 +167,7 @@ export function SaleExtrasPanel({
     patch({ customerPhone: phone, ...(hit && nameIsFree ? { customerName: hit.name } : {}) });
   }
 
-  const showTotals = !embedded && (off > 0 || creditBalance > 0);
+  const twoCols = allow.pay && allow.discount;
 
   return (
     <View
@@ -181,140 +184,195 @@ export function SaleExtrasPanel({
         </Pressable>
       )}
 
-      {showTotals ? (
-        <View style={styles.totals}>
-          {off > 0 ? (
-            <>
-              <Text style={[styles.totalsText, { color: colors.muted }]}>Subtotal {formatRs(subtotal)}</Text>
-              <Text style={[styles.totalsText, { color: colors.muted }]}>Discount -{formatRs(off)}</Text>
-            </>
-          ) : null}
-          <Text style={[styles.totalsStrong, { color: colors.ink }]}>To pay {formatRs(toPay)}</Text>
-          {creditBalance > 0 ? (
-            <>
-              <Text style={[styles.totalsText, { color: colors.muted }]}>
-                Received {formatRs(toPay - creditBalance)}
-              </Text>
-              <Text style={[styles.totalsStrong, { color: colors.expenseText }]}>
-                Balance to credit book {formatRs(creditBalance)}
-              </Text>
-            </>
-          ) : null}
-        </View>
-      ) : null}
-
       {open ? (
         <View style={[styles.body, embedded ? styles.bodyBare : null]}>
           {allow.customer ? (
-            <View style={styles.col}>
-              <TextInput
-                value={value.customerPhone}
-                onChangeText={onPhoneChange}
-                placeholder={needsPhone ? 'Customer phone (required for credit)' : 'Customer phone'}
-                placeholderTextColor={needsPhone ? colors.expenseText : colors.muted}
-                keyboardType="phone-pad"
-                style={[
-                  styles.input,
-                  styles.inputFull,
-                  { borderColor: needsPhone ? colors.expenseText : colors.line, color: colors.ink },
-                ]}
-              />
-              {matched ? (
-                <Text style={[styles.hint, { color: colors.muted }]}>
-                  Existing customer{matched.due > 0 ? ` · due ${formatRs(matched.due)}` : ''}
-                </Text>
-              ) : null}
-              {suggestions.length > 0 ? (
-                <View style={styles.suggestCol}>
-                  {suggestions.map((c) => (
-                    <Pressable
-                      key={`${c.phone}-${c.name}`}
-                      onPress={() => patch({ customerPhone: c.phone, customerName: c.name })}
-                      style={[styles.suggest, { backgroundColor: colors.keypad }]}
-                    >
-                      <Text style={[styles.chipText, { color: colors.ink }]} numberOfLines={1}>
-                        {c.phone} · {c.name}
-                        {c.due > 0 ? ` · due ${formatRs(c.due)}` : ''}
-                      </Text>
-                    </Pressable>
-                  ))}
+            <View style={styles.section}>
+              <View style={styles.sectionHead}>
+                <View style={styles.sectionHeadLeft}>
+                  <PersonIcon color={colors.brand} size={16} />
+                  <Text style={[styles.sectionTitle, { color: colors.ink }]}>Customer Details</Text>
                 </View>
-              ) : null}
-              <TextInput
-                value={value.customerName}
-                onChangeText={(text) => patch({ customerName: text.slice(0, 60) })}
-                placeholder="Customer name (optional)"
-                placeholderTextColor={colors.muted}
-                style={[styles.input, styles.inputFull, { borderColor: colors.line, color: colors.ink }]}
-              />
+                <View style={[styles.optionalBadge, { backgroundColor: colors.keypad }]}>
+                  <Text style={[styles.optionalBadgeText, { color: colors.muted }]}>Optional</Text>
+                </View>
+              </View>
+              <View style={styles.col}>
+                <IconField
+                  icon={<PhoneIcon color={colors.brand} size={17} />}
+                  iconTint={colors.brand}
+                  value={value.customerPhone}
+                  onChangeText={onPhoneChange}
+                  placeholder={needsPhone ? 'Phone number (required for credit)' : 'Customer Phone Number'}
+                  keyboardType="phone-pad"
+                  containerStyle={needsPhone ? { borderColor: colors.expenseText } : undefined}
+                />
+                {matched ? (
+                  <Text style={[styles.hint, { color: colors.muted }]}>
+                    Existing customer{matched.due > 0 ? ` · due ${formatRs(matched.due)}` : ''}
+                  </Text>
+                ) : null}
+                {suggestions.length > 0 ? (
+                  <View style={styles.suggestCol}>
+                    {suggestions.map((c) => (
+                      <Pressable
+                        key={`${c.phone}-${c.name}`}
+                        onPress={() => patch({ customerPhone: c.phone, customerName: c.name })}
+                        style={[styles.suggest, { backgroundColor: colors.keypad }]}
+                      >
+                        <Text style={[styles.chipText, { color: colors.ink }]} numberOfLines={1}>
+                          {c.phone} · {c.name}
+                          {c.due > 0 ? ` · due ${formatRs(c.due)}` : ''}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+                <IconField
+                  icon={<PersonIcon color={colors.brand} size={17} />}
+                  iconTint={colors.brand}
+                  value={value.customerName}
+                  onChangeText={(text) => patch({ customerName: text.slice(0, 60) })}
+                  placeholder="Customer Name"
+                />
+              </View>
             </View>
           ) : null}
 
           {allow.pay ? (
-            <View style={styles.row}>
-              {MODES.map((mode) => {
-                const on = value.paymentMode === mode;
-                return (
-                  <Pressable
-                    key={mode}
-                    onPress={() => patch({ paymentMode: mode })}
-                    style={[styles.chip, { backgroundColor: on ? colors.brand : colors.keypad }]}
-                  >
-                    <Text style={[styles.chipText, { color: on ? colors.onFill : colors.ink }]}>
-                      {mode === 'credit' ? 'Credit' : PAYMENT_MODE_LABEL[mode]}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
-
-          {allow.pay ? (
-            <View style={styles.col}>
-              <TextInput
-                value={value.receivedText}
-                onChangeText={(text) => patch({ receivedText: text.replace(/[^\d]/g, '').slice(0, 9) })}
-                placeholder={toPay > 0 ? `Received (blank = full ${formatRs(toPay)})` : 'Received'}
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-                style={[styles.input, styles.inputFull, { borderColor: colors.line, color: colors.ink }]}
-              />
-              {creditBalance > 0 ? (
-                <Text style={[styles.hint, { color: colors.expenseText }]}>
-                  {formatRs(creditBalance)} will be saved to the credit book.
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          {allow.discount ? (
-            <View style={styles.row}>
-              <View style={styles.unitRow}>
-                {(['amount', 'percent'] as const).map((type) => {
-                  const on = value.discountType === type;
+            <View style={styles.section}>
+              <View style={styles.sectionHeadLeft}>
+                <CardIcon color={colors.brand} size={16} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>Payment Method</Text>
+              </View>
+              <View style={styles.payRow}>
+                {MODES.map((mode) => {
+                  const on = value.paymentMode === mode;
+                  const ModeIcon = MODE_ICON[mode];
                   return (
                     <Pressable
-                      key={type}
-                      onPress={() => patch({ discountType: type })}
-                      style={[styles.unit, { backgroundColor: on ? colors.brand : colors.keypad }]}
+                      key={mode}
+                      onPress={() => patch({ paymentMode: mode })}
+                      style={[
+                        styles.payCard,
+                        {
+                          borderColor: on ? colors.sale : colors.line,
+                          backgroundColor: on ? colors.saleWash : colors.white,
+                        },
+                      ]}
                     >
-                      <Text style={[styles.chipText, { color: on ? colors.onFill : colors.ink }]}>
-                        {type === 'amount' ? 'Rs' : '%'}
+                      {on ? (
+                        <View style={[styles.payCheck, { backgroundColor: colors.sale }]}>
+                          <CheckIcon color={colors.onFill} size={11} />
+                        </View>
+                      ) : null}
+                      <ModeIcon color={on ? colors.saleText : colors.muted} size={20} />
+                      <Text
+                        style={[styles.payCardText, { color: on ? colors.saleText : colors.ink }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                      >
+                        {mode === 'credit' ? 'Credit / Due' : PAYMENT_MODE_LABEL[mode]}
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
-              <TextInput
-                value={value.discountText}
-                onChangeText={(text) => patch({ discountText: text.replace(/[^\d.]/g, '').slice(0, 8) })}
-                placeholder="Discount"
-                placeholderTextColor={colors.muted}
-                keyboardType="numeric"
-                style={[styles.input, { borderColor: colors.line, color: colors.ink }]}
-              />
             </View>
           ) : null}
+
+          {allow.pay || allow.discount ? (
+            <View style={twoCols ? styles.row : styles.col}>
+              {allow.pay ? (
+                <View style={[styles.col, twoCols ? styles.flex1 : null]}>
+                  <Text style={[styles.fieldLabel, { color: colors.ink }]}>Amount Received</Text>
+                  <IconField
+                    icon={<CashIcon color={colors.sale} size={17} />}
+                    iconTint={colors.sale}
+                    value={value.receivedText}
+                    onChangeText={(text) => patch({ receivedText: text.replace(/[^\d]/g, '').slice(0, 9) })}
+                    placeholder={toPay > 0 ? formatRs(toPay) : 'Received'}
+                    keyboardType="numeric"
+                  />
+                  {creditBalance > 0 ? (
+                    <Text style={[styles.hint, { color: colors.expenseText }]}>
+                      {formatRs(creditBalance)} will be saved to the credit book.
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {allow.discount ? (
+                <View style={[styles.col, twoCols ? styles.flex1 : null]}>
+                  <View style={styles.discountHead}>
+                    <Text style={[styles.fieldLabel, { color: colors.ink }]}>Discount</Text>
+                    <View style={styles.unitRow}>
+                      {(['amount', 'percent'] as const).map((type) => {
+                        const on = value.discountType === type;
+                        return (
+                          <Pressable
+                            key={type}
+                            onPress={() => patch({ discountType: type })}
+                            style={[styles.unit, { backgroundColor: on ? colors.brand : colors.keypad }]}
+                          >
+                            <Text style={[styles.chipText, { color: on ? colors.onFill : colors.ink }]}>
+                              {type === 'amount' ? 'Rs' : '%'}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+                  <TextInput
+                    value={value.discountText}
+                    onChangeText={(text) => patch({ discountText: text.replace(/[^\d.]/g, '').slice(0, 8) })}
+                    placeholder="0.00"
+                    placeholderTextColor={colors.placeholder}
+                    keyboardType="numeric"
+                    style={[
+                      styles.input,
+                      styles.inputFull,
+                      { borderColor: colors.line, backgroundColor: colors.keypad, color: colors.ink },
+                    ]}
+                  />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={styles.payableWrap}>
+            {off > 0 ? (
+              <View style={styles.payableNote}>
+                <Text style={[styles.totalsText, { color: colors.muted }]}>Subtotal {formatRs(subtotal)}</Text>
+                <Text style={[styles.totalsText, { color: colors.muted }]}>Discount -{formatRs(off)}</Text>
+              </View>
+            ) : null}
+            <View style={[styles.payableBar, { backgroundColor: colors.saleWash }]}>
+              <View style={styles.payableLeft}>
+                <View style={[styles.payableCheck, { backgroundColor: colors.sale }]}>
+                  <CheckIcon color={colors.onFill} size={12} />
+                </View>
+                <Text style={[styles.payableLabel, { color: colors.ink }]}>Payable Amount</Text>
+              </View>
+              <Text style={[styles.payableValue, { color: colors.saleText }]} numberOfLines={1} adjustsFontSizeToFit>
+                {formatRs(toPay)}
+              </Text>
+            </View>
+            {allow.pay && creditBalance > 0 ? (
+              <View style={styles.pills}>
+                <View style={[styles.pill, { backgroundColor: colors.saleWash }]}>
+                  <Text style={[styles.pillLabel, { color: colors.saleText }]}>Received</Text>
+                  <Text style={[styles.pillValue, { color: colors.saleText }]}>
+                    {formatRs(toPay - creditBalance)}
+                  </Text>
+                </View>
+                <View style={[styles.pill, { backgroundColor: colors.expenseWash }]}>
+                  <Text style={[styles.pillLabel, { color: colors.expenseText }]}>To credit book</Text>
+                  <Text style={[styles.pillValue, { color: colors.expenseText }]}>{formatRs(creditBalance)}</Text>
+                </View>
+              </View>
+            ) : null}
+          </View>
         </View>
       ) : null}
     </View>
@@ -339,26 +397,47 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: fonts.semibold, fontSize: 14 },
   summary: { fontFamily: fonts.semibold, fontSize: 13, flexShrink: 1 },
-  totals: { gap: 2, paddingBottom: 8 },
-  totalsText: { fontFamily: fonts.regular, fontSize: 13 },
-  totalsStrong: { fontFamily: fonts.bold, fontSize: 15 },
-  body: { gap: 10, paddingBottom: 12 },
-  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  body: { gap: 16, paddingBottom: 12 },
+  section: { gap: 10 },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sectionHeadLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionTitle: { fontFamily: fonts.bold, fontSize: 14 },
+  optionalBadge: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  optionalBadgeText: { fontFamily: fonts.semibold, fontSize: 11 },
+  row: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   col: { gap: 8 },
-  chip: {
+  flex1: { flex: 1 },
+  fieldLabel: { fontFamily: fonts.semibold, fontSize: 13, marginBottom: 2 },
+  discountHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  payRow: { flexDirection: 'row', gap: 8 },
+  payCard: {
     flex: 1,
-    minHeight: 40,
-    borderRadius: 12,
+    minHeight: 72,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+  },
+  payCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  payCardText: { fontFamily: fonts.semibold, fontSize: 12, textAlign: 'center' },
   chipText: { fontFamily: fonts.semibold, fontSize: 13 },
   hint: { fontFamily: fonts.regular, fontSize: 12 },
   unitRow: { flexDirection: 'row', gap: 6 },
   unit: {
-    width: 44,
-    minHeight: 40,
-    borderRadius: 12,
+    width: 40,
+    minHeight: 32,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -367,11 +446,31 @@ const styles = StyleSheet.create({
   suggest: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   input: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 48,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    fontFamily: fonts.regular,
-    fontSize: 14,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
   },
+  payableWrap: { gap: 8 },
+  payableNote: { gap: 2 },
+  totalsText: { fontFamily: fonts.regular, fontSize: 13 },
+  payableBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  payableLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  payableCheck: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  payableLabel: { fontFamily: fonts.semibold, fontSize: 14 },
+  payableValue: { fontFamily: fonts.bold, fontSize: 19, flexShrink: 1, textAlign: 'right' },
+  pills: { flexDirection: 'row', gap: 8 },
+  pill: { flex: 1, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, alignItems: 'center' },
+  pillLabel: { fontFamily: fonts.semibold, fontSize: 11 },
+  pillValue: { fontFamily: fonts.bold, fontSize: 15 },
 });

@@ -8,7 +8,10 @@ import { SaleExtrasPanel, EMPTY_EXTRAS, buildExtras, extrasTotals, type SaleExtr
 import { CartLineRow } from '../components/CartLineRow';
 import { SaleCheckoutModal } from '../components/SaleCheckoutModal';
 import { Toast, useToast } from '../components/Toast';
-import { ScanIcon, SearchIcon, MoreIcon, CartDuoIcon, ReceiptDuoIcon, BackIcon } from '../components/Icons';
+import { ScanIcon, SearchIcon, MoreIcon, CartDuoIcon, ReceiptDuoIcon, BackIcon, CheckIcon } from '../components/Icons';
+import { gradients } from '../components/DashboardCards';
+import { Designable } from '../devtools/designMode/Designable';
+import { newSaleLayout } from '../designConfig/newSale';
 import { BranchChips } from '../components/kitchen/KitchenUi';
 import { ErrorText, FillButton, Screen } from '../components/ui';
 import { effectiveSellKind } from '../lib/productSell';
@@ -874,14 +877,21 @@ export function NewSaleScreen() {
                   displayMinHeight={keySize + 64}
                   valueFontSize={keySize >= 64 ? 52 : 46}
                 />
-                <View style={styles.saveGap}>
-                  <FillButton
-                    label={t((m) => m.sale.calcSave)}
-                    color={colors.saleText}
-                    onPress={openCheckout}
-                    disabled={saveTotal <= 0}
-                  />
-                </View>
+                <Designable screen="newSale" id="saveSaleButton" base={newSaleLayout.saveSaleButton} offsetKey="marginTop">
+                  {(v) => (
+                    <View style={[styles.saveGap, { marginTop: v.marginTop }]}>
+                      <FillButton
+                        label={t((m) => m.sale.calcSave)}
+                        gradient={gradients.green}
+                        icon={<CheckIcon color={colors.onFill} size={18} />}
+                        onPress={openCheckout}
+                        disabled={saveTotal <= 0}
+                        height={v.height}
+                        borderRadius={v.borderRadius}
+                      />
+                    </View>
+                  )}
+                </Designable>
                 {saveTotal > 0 ? holdButton : null}
                 {checkoutOpen ? null : <ErrorText message={error} />}
               </>

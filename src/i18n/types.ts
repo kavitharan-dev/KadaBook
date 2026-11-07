@@ -152,6 +152,7 @@ export type Messages = {
     calcTotal: string;
     calcSave: string;
     calcEmpty: string;
+    checkoutHeading: string;
     checkoutTitle: string;
     checkoutConfirm: string;
     billDetails: string;

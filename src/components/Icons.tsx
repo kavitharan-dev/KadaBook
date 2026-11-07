@@ -160,3 +160,15 @@ export const LayersIcon = createIcon('M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l1
 export const UtensilsIcon = createIcon(
   'M6 2v6a2 2 0 0 0 4 0V2M8 2v20M16 2c-1.5 2-2 4-2 6a3 3 0 0 0 3 3v11',
 );
+export const PersonIcon = createIcon(
+  'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+);
+export const PhoneIcon = createIcon(
+  'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z',
+);
+export const CardIcon = createIcon(
+  'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM1 10h22M5.5 15h3',
+);
+export const CashIcon = createIcon(
+  'M2 6h20a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM5.5 9h.01M18.5 9h.01M5.5 15h.01M18.5 15h.01',
+);
