@@ -25,7 +25,7 @@ export const ta: Messages = {
     sales: 'விற்பனை',
     products: 'பொருட்கள்',
     reports: 'அறிக்கை',
-    more: 'மேலும்',
+    more: 'அமைப்புகள்',
   },
   login: {
     taglineEn: 'Simple Accounting for Every Shop',
@@ -232,7 +232,7 @@ export const ta: Messages = {
     kindSale: 'விற்பனை',
   },
   more: {
-    title: 'மேலும்',
+    title: 'அமைப்புகள்',
     shopName: 'கடை பெயர்',
     saveShop: 'கடை பெயர் சேமி',
     shopSaved: 'கடை பெயர் சேமிக்கப்பட்டது.',

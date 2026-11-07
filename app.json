@@ -62,6 +62,12 @@
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow KadaBook to access your photos to set a profile picture."
+        }
       ]
     ],
     "extra": {

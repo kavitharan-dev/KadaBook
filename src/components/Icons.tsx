@@ -94,3 +94,41 @@ export const BookDuoIcon = createDuoIcon(
   'M4 5h7a2 2 0 0 1 2 2v12a2 2 0 0 0-2-2H4z',
   'M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 5v14.5A2.5 2.5 0 0 0 6.5 22H20V7a2 2 0 0 0-2-2H6.5A2.5 2.5 0 0 0 4 7.5z',
 );
+
+export const GearIcon = createIcon(
+  'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' +
+    'M19.4 13a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V19a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+);
+export const ShieldIcon = createIcon('M12 3l8 3v6c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V6z');
+export const UsersDuoIcon = createDuoIcon(
+  'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2z',
+  'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M17 11a4 4 0 0 0 0-8M21 21v-2a4 4 0 0 0-3-3.87',
+);
+export const ClipboardDuoIcon = createDuoIcon(
+  'M8 4h8a1 1 0 0 1 1 1v2H7V5a1 1 0 0 1 1-1z',
+  'M8 4h8a1 1 0 0 1 1 1v1h2a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h2V5a1 1 0 0 1 1-1zM9 12h6M9 16h4',
+);
+export const SunIcon = createIcon(
+  'M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+);
+export const PrinterIcon = createIcon(
+  'M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z',
+);
+export const HelpCircleIcon = createIcon(
+  'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5M12 17h.01',
+);
+export const InfoCircleIcon = createIcon('M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 8h.01M11 12h1v5h1');
+export const LockIcon = createIcon(
+  'M6 10V7a6 6 0 1 1 12 0v3M5 10h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z',
+);
+export const CameraIcon = createIcon(
+  'M4 8a1 1 0 0 1 1-1h2l1.5-2h7L17 7h2a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+);
+export const FileExportDuoIcon = createDuoIcon(
+  'M7 3h7l4 4v14H7z',
+  'M7 3h7l4 4v14H7zM14 3v4h4M9 14l3 3 3-3M12 10v7',
+);
+export const LogOutIcon = createIcon('M15 17l5-5-5-5M20 12H9M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7');
+export const GlobeOutlineIcon = createIcon(
+  'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+);

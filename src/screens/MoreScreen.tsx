@@ -1,14 +1,31 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Alert, Pressable, ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
+import {
+  BookDuoIcon,
+  CameraIcon,
+  ClipboardDuoIcon,
+  FileExportDuoIcon,
+  GearIcon,
+  GridDuoIcon,
+  HelpCircleIcon,
+  InfoCircleIcon,
+  LockIcon,
+  LogOutIcon,
+  PrinterIcon,
+  ShieldIcon,
+  SunIcon,
+  UsersDuoIcon,
+} from '../components/Icons';
 import { markSignedOut, usePinLock } from '../components/PinLockGate';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import type { Locale } from '../i18n';
 import { useAuth } from '../context/AuthContext';
+import { useAvatar } from '../hooks/useAvatar';
 import { useBooks } from '../context/BooksContext';
 import { ROLE_LABEL, useRole } from '../lib/roles';
 import { useTheme } from '../context/ThemeContext';
@@ -32,11 +49,31 @@ const LANGS: { code: Locale; labelKey: 'langEn' | 'langTa' | 'langSi' }[] = [
   { code: 'si', labelKey: 'langSi' },
 ];
 
-function Section({ label, children }: { label: string; children: ReactNode }) {
+type IconType = typeof GearIcon;
+
+function Section({
+  label,
+  Icon,
+  tint,
+  children,
+}: {
+  label: string;
+  Icon?: IconType;
+  tint?: string;
+  children: ReactNode;
+}) {
   const styles = useStyleSheet(moreStyles);
+  const { colors } = useTheme();
   return (
     <View>
-      <Text style={styles.sectionLabel}>{label}</Text>
+      <View style={styles.sectionHead}>
+        {Icon ? (
+          <View style={[styles.sectionIconWrap, { backgroundColor: (tint ?? colors.brand) + '1A' }]}>
+            <Icon color={tint ?? colors.brand} size={14} />
+          </View>
+        ) : null}
+        <Text style={styles.sectionLabel}>{label}</Text>
+      </View>
       <View style={styles.card}>{children}</View>
     </View>
   );
@@ -48,12 +85,16 @@ function Row({
   onPress,
   last,
   right,
+  Icon,
+  tint,
 }: {
   title: string;
   subtitle?: string;
   onPress?: () => void;
   last?: boolean;
   right?: ReactNode;
+  Icon?: IconType;
+  tint?: string;
 }) {
   const styles = useStyleSheet(moreStyles);
   return (
@@ -62,6 +103,11 @@ function Row({
       disabled={!onPress}
       style={({ pressed }) => [styles.row, !last && styles.rowLine, pressed && { opacity: 0.7 }]}
     >
+      {Icon ? (
+        <View style={[styles.rowIconWrap, { backgroundColor: tint ?? '#64748B' }]}>
+          <Icon color="#FFFFFF" size={17} />
+        </View>
+      ) : null}
       <View style={styles.rowCopy}>
         <Text style={styles.rowTitle}>{title}</Text>
         {subtitle ? (
@@ -93,6 +139,7 @@ export function MoreScreen() {
   const { locale, setLocale, t } = useI18n();
   const { width } = useWindowDimensions();
   const wide = width >= 700;
+  const avatar = useAvatar(user?.uid);
 
   // Real shop name comes from the account profile; fall back to the signed-in user.
   const currentName =
@@ -191,9 +238,16 @@ export function MoreScreen() {
           style={styles.hero}
         >
           <View style={styles.heroTop}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initial}</Text>
-            </View>
+            <Pressable onPress={avatar.pick} style={styles.avatar} disabled={avatar.busy}>
+              {avatar.uri ? (
+                <Image source={{ uri: avatar.uri }} style={{ width: 64, height: 64, borderRadius: 32 }} />
+              ) : (
+                <Text style={styles.avatarText}>{initial}</Text>
+              )}
+              <View style={styles.avatarEditBadge}>
+                <CameraIcon color="#1D5FE0" size={12} />
+              </View>
+            </Pressable>
             <View style={styles.heroCopy}>
               <Text style={styles.heroName} numberOfLines={1}>
                 {currentName || 'KadaBook'}
@@ -221,7 +275,7 @@ export function MoreScreen() {
           </View>
         </LinearGradient>
 
-        <Section label={t((m) => m.common.account)}>
+        <Section label={t((m) => m.common.account)} Icon={UsersDuoIcon} tint="#1D5FE0">
           <View style={styles.cardPad}>
             <View>
               <Text style={styles.fieldLabel}>Signed in as</Text>
@@ -263,28 +317,9 @@ export function MoreScreen() {
           </View>
         </Section>
 
-        <Section label="Security">
-          <Row
-            title="PIN lock"
-            subtitle={pinEnabled ? 'Ask for a PIN when the app opens' : 'Off. Anyone can open the app'}
-            onPress={pinEnabled ? disablePin : enablePin}
-            last={!pinEnabled}
-            right={
-              <Switch
-                value={pinEnabled}
-                onValueChange={(on) => (on ? enablePin() : disablePin())}
-                trackColor={{ true: colors.brand, false: colors.hairline }}
-                thumbColor={colors.white}
-              />
-            }
-          />
-          {pinEnabled ? (
-            <Row title="Change PIN" subtitle="Set a new 4-digit PIN" onPress={changePin} last />
-          ) : null}
-        </Section>
-
-        <Section label={t((m) => m.more.language)}>
+        <Section label="Preferences" Icon={SunIcon} tint="#D97706">
           <View style={styles.cardPad}>
+            <Text style={styles.fieldLabel}>{t((m) => m.more.language)}</Text>
             <View style={styles.langRow}>
               {LANGS.map((item) => {
                 const active = locale === item.code;
@@ -302,40 +337,41 @@ export function MoreScreen() {
               })}
             </View>
           </View>
+          <Row
+            title={t((m) => m.settings.themeTitle)}
+            subtitle={t((m) => m.settings.themeSub)}
+            onPress={() => navigation.navigate('ThemeSettings')}
+            Icon={SunIcon}
+            tint="#D97706"
+            last
+          />
         </Section>
 
-        <Section label="Shop tools">
-          {can('collectCredit') ? (
+        <Section label="Security & team" Icon={ShieldIcon} tint="#DC2626">
+          <Row
+            title="PIN lock"
+            subtitle={pinEnabled ? 'Ask for a PIN when the app opens' : 'Off. Anyone can open the app'}
+            onPress={pinEnabled ? disablePin : enablePin}
+            Icon={LockIcon}
+            tint="#4F46E5"
+            last={!pinEnabled && !can('manageStaff') && !can('viewAudit')}
+            right={
+              <Switch
+                value={pinEnabled}
+                onValueChange={(on) => (on ? enablePin() : disablePin())}
+                trackColor={{ true: colors.brand, false: colors.hairline }}
+                thumbColor={colors.white}
+              />
+            }
+          />
+          {pinEnabled ? (
             <Row
-              title={has('creditBook') ? 'Credit book' : '🔒 Credit book'}
-              subtitle={
-                has('creditBook')
-                  ? 'Customer dues, collect payments, WhatsApp reminders'
-                  : 'Locked — ask admin to enable this add-on'
-              }
-              onPress={() => navigation.navigate('CreditBook')}
-            />
-          ) : null}
-          {can('manageStock') && showKitchen ? (
-            <Row
-              title={has('kitchenStock') ? 'Kitchen' : '🔒 Kitchen'}
-              subtitle={
-                has('kitchenStock')
-                  ? 'Buy, send to branch, make food'
-                  : 'Locked — ask admin to enable kitchen add-on'
-              }
-              onPress={() => navigation.navigate('Kitchen')}
-            />
-          ) : null}
-          {can('exportData') ? (
-            <Row
-              title={has('exportData') ? 'Excel export & import' : '🔒 Excel export & import'}
-              subtitle={
-                has('exportData')
-                  ? 'Export sales, expenses, stock to .xlsx · bulk import products'
-                  : 'Locked — ask admin to enable this add-on'
-              }
-              onPress={() => navigation.navigate('DataTools')}
+              title="Change PIN"
+              subtitle="Set a new 4-digit PIN"
+              onPress={changePin}
+              Icon={LockIcon}
+              tint="#4F46E5"
+              last={!can('manageStaff') && !can('viewAudit')}
             />
           ) : null}
           {can('manageStaff') ? (
@@ -347,6 +383,9 @@ export function MoreScreen() {
                   : 'Locked — ask admin to enable staff add-on'
               }
               onPress={() => navigation.navigate('Staff')}
+              Icon={UsersDuoIcon}
+              tint="#7C3AED"
+              last={!can('viewAudit')}
             />
           ) : null}
           {can('viewAudit') ? (
@@ -358,6 +397,51 @@ export function MoreScreen() {
                   : 'Locked — ask admin to enable staff add-on'
               }
               onPress={() => navigation.navigate('AuditLog')}
+              Icon={ClipboardDuoIcon}
+              tint="#DB2777"
+              last
+            />
+          ) : null}
+        </Section>
+
+        <Section label="Business tools" Icon={GridDuoIcon} tint="#15803D">
+          {can('collectCredit') ? (
+            <Row
+              title={has('creditBook') ? 'Credit book' : '🔒 Credit book'}
+              subtitle={
+                has('creditBook')
+                  ? 'Customer dues, collect payments, WhatsApp reminders'
+                  : 'Locked — ask admin to enable this add-on'
+              }
+              onPress={() => navigation.navigate('CreditBook')}
+              Icon={BookDuoIcon}
+              tint="#0F766E"
+            />
+          ) : null}
+          {can('manageStock') && showKitchen ? (
+            <Row
+              title={has('kitchenStock') ? 'Kitchen' : '🔒 Kitchen'}
+              subtitle={
+                has('kitchenStock')
+                  ? 'Buy, send to branch, make food'
+                  : 'Locked — ask admin to enable kitchen add-on'
+              }
+              onPress={() => navigation.navigate('Kitchen')}
+              Icon={GridDuoIcon}
+              tint="#EA580C"
+            />
+          ) : null}
+          {can('exportData') ? (
+            <Row
+              title={has('exportData') ? 'Excel export & import' : '🔒 Excel export & import'}
+              subtitle={
+                has('exportData')
+                  ? 'Export sales, expenses, stock to .xlsx · bulk import products'
+                  : 'Locked — ask admin to enable this add-on'
+              }
+              onPress={() => navigation.navigate('DataTools')}
+              Icon={FileExportDuoIcon}
+              tint="#15803D"
             />
           ) : null}
           {can('shopSettings') ? (
@@ -365,22 +449,16 @@ export function MoreScreen() {
               title={t((m) => m.settings.openSettings)}
               subtitle={t((m) => m.settings.receiptSub)}
               onPress={() => navigation.navigate('SettingsMenu')}
+              Icon={GearIcon}
+              tint="#334155"
             />
           ) : null}
-          <Row
-            title={t((m) => m.settings.themeTitle)}
-            subtitle={t((m) => m.settings.themeSub)}
-            onPress={() => navigation.navigate('ThemeSettings')}
-          />
           <Row
             title="Bluetooth printer"
             subtitle="Switch on the PT-210 printer, then tap to print a test."
             onPress={testPrinter}
-          />
-          <Row
-            title={t((m) => m.tips.title)}
-            subtitle={t((m) => m.tips.endSaleTitle)}
-            onPress={() => navigation.navigate('TipsHelp')}
+            Icon={PrinterIcon}
+            tint="#475569"
             last
           />
         </Section>
@@ -399,7 +477,18 @@ export function MoreScreen() {
           </View>
         ) : null}
 
-        <Section label="About">
+        <Section label="Support" Icon={HelpCircleIcon} tint="#0369A1">
+          <Row
+            title={t((m) => m.tips.title)}
+            subtitle={t((m) => m.tips.endSaleTitle)}
+            onPress={() => navigation.navigate('TipsHelp')}
+            Icon={HelpCircleIcon}
+            tint="#0369A1"
+            last
+          />
+        </Section>
+
+        <Section label="About" Icon={InfoCircleIcon} tint="#64748B">
           <Row title="Developed by" subtitle="Matrix Smart Store" />
           <Row title="Version" subtitle={`KadaBook v${APP_VERSION}`} />
           <Row title="Update tag" subtitle={BUILD_TAG} />
@@ -440,6 +529,7 @@ export function MoreScreen() {
           }}
           style={styles.signOut}
         >
+          <LogOutIcon color={colors.expenseText} size={18} />
           <Text style={styles.signOutText}>{t((m) => m.more.signOut)}</Text>
         </Pressable>
       </ScrollView>
@@ -471,17 +561,31 @@ function moreStyles(c: ColorPalette) {
       gap: 14,
     },
     avatar: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
+      width: 64,
+      height: 64,
+      borderRadius: 32,
       backgroundColor: 'rgba(255,255,255,0.22)',
       alignItems: 'center',
       justifyContent: 'center',
+      position: 'relative',
     },
     avatarText: {
       fontFamily: fonts.bold,
-      fontSize: 24,
+      fontSize: 26,
       color: '#FFFFFF',
+    },
+    avatarEditBadge: {
+      position: 'absolute',
+      right: -2,
+      bottom: -2,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 2,
+      borderColor: '#1D5FE0',
     },
     heroCopy: {
       flex: 1,
@@ -526,9 +630,21 @@ function moreStyles(c: ColorPalette) {
       fontSize: 13,
       color: '#1D5FE0',
     },
-    sectionLabel: {
+    sectionHead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
       marginBottom: 8,
       marginLeft: 4,
+    },
+    sectionIconWrap: {
+      width: 22,
+      height: 22,
+      borderRadius: 7,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionLabel: {
       fontFamily: fonts.semibold,
       fontSize: 12,
       letterSpacing: 0.6,
@@ -561,6 +677,13 @@ function moreStyles(c: ColorPalette) {
     rowLine: {
       borderBottomWidth: 1,
       borderBottomColor: c.rowLine,
+    },
+    rowIconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     rowCopy: {
       flex: 1,
@@ -685,8 +808,10 @@ function moreStyles(c: ColorPalette) {
       borderRadius: 14,
       borderWidth: 1,
       borderColor: c.line,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 8,
     },
     signOutText: {
       fontFamily: fonts.semibold,

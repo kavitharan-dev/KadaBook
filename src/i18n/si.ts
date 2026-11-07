@@ -25,7 +25,7 @@ export const si: Messages = {
     sales: 'විකුණුම්',
     products: 'නිෂ්පාදන',
     reports: 'වාර්තා',
-    more: 'තව',
+    more: 'සැකසුම්',
   },
   login: {
     taglineEn: 'Simple Accounting for Every Shop',
@@ -232,7 +232,7 @@ export const si: Messages = {
     kindSale: 'විකුණුම',
   },
   more: {
-    title: 'තව',
+    title: 'සැකසුම්',
     shopName: 'කඩ නම',
     saveShop: 'කඩ නම සුරකින්න',
     shopSaved: 'කඩ නම සුරකින ලදී.',

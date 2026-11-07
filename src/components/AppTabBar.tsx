@@ -4,7 +4,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useI18n } from '../context/LocaleContext';
 import { useTheme } from '../context/ThemeContext';
 import { useRole, type Permission } from '../lib/roles';
-import { HomeIcon, MoreIcon, ProductIcon, ReportIcon, SaleIcon } from './Icons';
+import { GearIcon, HomeIcon, ProductIcon, ReportIcon, SaleIcon } from './Icons';
 import { TabBarIcon } from './TabBarIcon';
 
 const TABS: { name: string; key: 'home' | 'sales' | 'products' | 'reports' | 'more'; Icon: typeof HomeIcon; needs?: Permission }[] = [
@@ -12,7 +12,7 @@ const TABS: { name: string; key: 'home' | 'sales' | 'products' | 'reports' | 'mo
   { name: 'Sales', key: 'sales', Icon: SaleIcon },
   { name: 'Products', key: 'products', Icon: ProductIcon, needs: 'manageProducts' },
   { name: 'Reports', key: 'reports', Icon: ReportIcon, needs: 'viewReports' },
-  { name: 'More', key: 'more', Icon: MoreIcon },
+  { name: 'More', key: 'more', Icon: GearIcon },
 ];
 
 export function AppTabBar({ state, navigation }: BottomTabBarProps) {

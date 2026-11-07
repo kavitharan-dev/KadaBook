@@ -25,7 +25,7 @@ export const en: Messages = {
     sales: 'Sales',
     products: 'Products',
     reports: 'Reports',
-    more: 'More',
+    more: 'Settings',
   },
   login: {
     taglineEn: 'Simple Accounting for Every Shop',
@@ -232,7 +232,7 @@ export const en: Messages = {
     kindSale: 'Sale',
   },
   more: {
-    title: 'More',
+    title: 'Settings',
     shopName: 'Shop name',
     saveShop: 'Save Shop Name',
     shopSaved: 'Shop name saved.',
