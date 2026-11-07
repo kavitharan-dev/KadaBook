@@ -66,6 +66,8 @@ export const ta: Messages = {
     margin: 'லாபம் {percent}%',
     view: 'பார்',
     vsYesterday: 'நேற்றை விட',
+    trendNeutral: 'மாற்றமில்லை',
+    trendNew: 'இன்று புதிய விற்பனை',
     closeDay: 'நாளை மூடு',
     closeDayTitle: 'இன்றைய விற்பனையை மூடு',
     dayClosedTitle: 'இன்று மூடப்பட்டது',
@@ -234,7 +236,7 @@ export const ta: Messages = {
   more: {
     title: 'அமைப்புகள்',
     shopName: 'கடை பெயர்',
-    saveShop: 'கடை பெயர் சேமி',
+    saveShop: 'கடை விவரங்களை சேமி',
     shopSaved: 'கடை பெயர் சேமிக்கப்பட்டது.',
     shopError: 'கடை பெயரை சேமிக்க முடியவில்லை.',
     quickProfitPercent: 'விரைவு விற்பனை லாப %',

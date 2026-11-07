@@ -69,6 +69,8 @@ export type Messages = {
     margin: string;
     view: string;
     vsYesterday: string;
+    trendNeutral: string;
+    trendNew: string;
     closeDay: string;
     closeDayTitle: string;
     dayClosedTitle: string;

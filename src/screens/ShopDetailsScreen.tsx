@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { CameraIcon } from '../components/Icons';
@@ -41,24 +41,49 @@ export function ShopDetailsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // `profile` comes from a live Firestore listener and gets a new object identity on every
+  // snapshot — including unrelated writes elsewhere in the same doc (a sale's openingBalances,
+  // the local-then-server double-fire after this screen's own save). Re-syncing fields on every
+  // one of those was wiping whatever the person had typed but not yet saved, and comparing
+  // "dirty" against the live profile could flip it under them mid-edit too. Hydrate once, the
+  // first time real profile data shows up, into a frozen baseline — fields and the dirty check
+  // both key off that snapshot, not the live listener, from then on.
+  const hydrated = useRef(false);
+  const [baseline, setBaseline] = useState({
+    shopName: currentName,
+    ownerName: profile?.ownerName ?? '',
+    phone: profile?.phone ?? '',
+    email: profile?.email ?? '',
+    district: profile?.district ?? '',
+    gstin: profile?.gstin ?? '',
+  });
   useEffect(() => {
-    setShopName(currentName);
-    setOwnerName(profile?.ownerName ?? '');
-    setPhone(profile?.phone ?? '');
-    setEmail(profile?.email ?? '');
-    setAddress(profile?.district ?? '');
-    setGstin(profile?.gstin ?? '');
-    // Only re-sync when the saved profile itself changes — not on every local keystroke.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (hydrated.current || !profile) return;
+    hydrated.current = true;
+    const next = {
+      shopName: currentName,
+      ownerName: profile.ownerName ?? '',
+      phone: profile.phone ?? '',
+      email: profile.email ?? '',
+      district: profile.district ?? '',
+      gstin: profile.gstin ?? '',
+    };
+    setBaseline(next);
+    setShopName(next.shopName);
+    setOwnerName(next.ownerName);
+    setPhone(next.phone);
+    setEmail(next.email);
+    setAddress(next.district);
+    setGstin(next.gstin);
   }, [profile, currentName]);
 
   const dirty =
-    shopName.trim() !== currentName ||
-    ownerName.trim() !== (profile?.ownerName ?? '') ||
-    phone.trim() !== (profile?.phone ?? '') ||
-    email.trim() !== (profile?.email ?? '') ||
-    address.trim() !== (profile?.district ?? '') ||
-    gstin.trim() !== (profile?.gstin ?? '');
+    shopName.trim() !== baseline.shopName ||
+    ownerName.trim() !== baseline.ownerName ||
+    phone.trim() !== baseline.phone ||
+    email.trim() !== baseline.email ||
+    address.trim() !== baseline.district ||
+    gstin.trim() !== baseline.gstin;
 
   async function save() {
     setError(null);
@@ -69,14 +94,16 @@ export function ShopDetailsScreen() {
     }
     setBusy(true);
     try {
-      await updateShopProfile({
+      const patch = {
         shopName: shopName.trim(),
         ownerName: ownerName.trim(),
         phone: phone.trim(),
         email: email.trim(),
         district: address.trim(),
         gstin: gstin.trim(),
-      });
+      };
+      await updateShopProfile(patch);
+      setBaseline(patch);
       setMessage(t((m) => m.more.shopSaved));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t((m) => m.more.shopError));

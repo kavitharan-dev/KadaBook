@@ -66,6 +66,8 @@ export const en: Messages = {
     margin: '{percent}% margin',
     view: 'View',
     vsYesterday: 'vs yesterday',
+    trendNeutral: 'No change',
+    trendNew: 'New today',
     closeDay: 'Close day',
     closeDayTitle: 'Close today’s sales',
     dayClosedTitle: 'Today is closed',
@@ -234,7 +236,7 @@ export const en: Messages = {
   more: {
     title: 'Settings',
     shopName: 'Shop name',
-    saveShop: 'Save Shop Name',
+    saveShop: 'Save Shop Details',
     shopSaved: 'Shop name saved.',
     shopError: 'Could not save the shop name.',
     quickProfitPercent: 'Quick sale profit %',

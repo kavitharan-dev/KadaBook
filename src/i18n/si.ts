@@ -66,6 +66,8 @@ export const si: Messages = {
     margin: 'ලාභය {percent}%',
     view: 'බලන්න',
     vsYesterday: 'ඊයේට සාපේක්ෂව',
+    trendNeutral: 'වෙනසක් නැත',
+    trendNew: 'අද නව විකුණුම්',
     closeDay: 'දවස වසන්න',
     closeDayTitle: 'අද විකුණුම් වසන්න',
     dayClosedTitle: 'අද වසා ඇත',
@@ -234,7 +236,7 @@ export const si: Messages = {
   more: {
     title: 'සැකසුම්',
     shopName: 'කඩ නම',
-    saveShop: 'කඩ නම සුරකින්න',
+    saveShop: 'කඩ විස්තර සුරකින්න',
     shopSaved: 'කඩ නම සුරකින ලදී.',
     shopError: 'කඩ නම සුරැකිය නොහැක.',
     quickProfitPercent: 'ඉක්මන් විකුණුම් ලාභ %',
