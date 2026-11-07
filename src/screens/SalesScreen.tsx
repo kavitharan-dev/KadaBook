@@ -190,7 +190,7 @@ export function SalesScreen() {
                   </View>
                   <View style={styles.actions}>
                     <PrintButton
-                      compact
+                      iconOnly
                       phase={printingId === sale.id ? printFx.phase : 'idle'}
                       onPress={() => printSale(sale)}
                       label={t((m) => m.salesTab.print)}

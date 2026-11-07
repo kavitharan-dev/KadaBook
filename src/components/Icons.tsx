@@ -151,6 +151,7 @@ export const SearchIcon = createIcon(
   'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
 );
 export const CloseIcon = createIcon('M18 6L6 18M6 6l12 12');
+export const CheckIcon = createIcon('M5 13l4 4L19 7');
 export const TagIcon = createIcon(
   'M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01',
 );
