@@ -147,3 +147,11 @@ export const ChatDuoIcon = createDuoIcon(
 export const GlobeOutlineIcon = createIcon(
   'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
 );
+export const SearchIcon = createIcon(
+  'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
+);
+export const CloseIcon = createIcon('M18 6L6 18M6 6l12 12');
+export const TagIcon = createIcon(
+  'M20.59 13.41L13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01',
+);
+export const LayersIcon = createIcon('M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5');

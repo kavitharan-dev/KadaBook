@@ -1,5 +1,15 @@
 import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type StyleProp,
+  type TextInputProps,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnimatedIconPress } from './AnimatedIconPress';
 import { BackIcon } from './Icons';
@@ -122,6 +132,28 @@ export function FillButton({
   );
 }
 
+export function IconField({
+  icon,
+  iconTint,
+  containerStyle,
+  style,
+  ...inputProps
+}: TextInputProps & { icon: ReactNode; iconTint?: string; containerStyle?: StyleProp<ViewStyle> }) {
+  const { colors } = useTheme();
+  const tint = iconTint ?? colors.brand;
+  return (
+    <View style={[styles.iconFieldWrap, { borderColor: colors.line, backgroundColor: colors.white }, containerStyle]}>
+      <View style={[styles.iconFieldIcon, { backgroundColor: `${tint}1F` }]}>{icon}</View>
+      <TextInput
+        {...inputProps}
+        placeholderTextColor={colors.placeholder}
+        underlineColorAndroid="transparent"
+        style={[styles.iconFieldInput, { color: colors.ink }, style]}
+      />
+    </View>
+  );
+}
+
 export function ErrorText({ message }: { message: string | null }) {
   const { colors } = useTheme();
   if (!message) return null;
@@ -180,6 +212,29 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     fontFamily: fonts.regular,
+    fontSize: 15,
+  },
+  iconFieldWrap: {
+    height: 56,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingLeft: 8,
+    paddingRight: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  iconFieldIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconFieldInput: {
+    flex: 1,
+    height: '100%',
+    fontFamily: fonts.semibold,
     fontSize: 15,
   },
   fill: {

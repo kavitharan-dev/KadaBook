@@ -8,16 +8,32 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import { BarcodeScannerModal } from '../components/BarcodeScannerModal';
 import { AccessBlockedModal } from '../components/GateModals';
-import { ScanIcon } from '../components/Icons';
-import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
+import { AnimatedIconPress } from '../components/AnimatedIconPress';
+import {
+  BackIcon,
+  BellIcon,
+  BoxDuoIcon,
+  ChevronRightIcon,
+  CloseIcon,
+  ExpenseIcon,
+  GridDuoIcon,
+  LayersIcon,
+  ProductIcon,
+  ScanIcon,
+  SearchIcon,
+  TagIcon,
+} from '../components/Icons';
+import { ErrorText, FillButton, IconField, Screen } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useBooks } from '../context/BooksContext';
 import { useI18n } from '../context/LocaleContext';
@@ -284,35 +300,55 @@ export function ProductsScreen() {
   }
 
   // Kitchen shops sell menu food; retail keeps category filters only (no sell-kind chips).
-  const chips: { key: string; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'low', label: `Low stock${lowIds.size ? ` (${lowIds.size})` : ''}` },
-    ...categories.map((c) => ({ key: c, label: c })),
+  const chips: { key: string; label: string; Icon?: typeof GridDuoIcon }[] = [
+    { key: 'all', label: 'All', Icon: GridDuoIcon },
+    { key: 'low', label: `Low stock${lowIds.size ? ` (${lowIds.size})` : ''}`, Icon: BoxDuoIcon },
+    ...categories.map((c) => ({ key: c, label: c, Icon: c.toLowerCase() === 'food' ? BellIcon : undefined })),
   ];
+  const itemCount = books.products.length;
 
   return (
     <Screen>
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
 
-      <Header
-        title={isKitchenShop ? 'Menu' : t((m) => m.productsTab.title)}
-        onBack={() => navigation.navigate('Home')}
-        right={
-          <Text style={styles.count} numberOfLines={1}>
-            {books.products.length} {books.products.length === 1 ? 'item' : 'items'}
-            {lowIds.size ? ` · ${lowIds.size} low` : ''}
-          </Text>
-        }
-      />
-
-      <View style={styles.searchWrap}>
-        <Field
-          value={search}
-          onChangeText={setSearch}
-          placeholder={isKitchenShop ? 'Search menu' : 'Search products'}
-          autoCapitalize="none"
-        />
-      </View>
+      <LinearGradient colors={['#6E28F2', '#8B4CF5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
+        <View style={styles.heroTop}>
+          <AnimatedIconPress
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={() => navigation.navigate('Home')}
+            hitSlop={6}
+            style={styles.heroBack}
+          >
+            <BackIcon color="#FFFFFF" />
+          </AnimatedIconPress>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroTitle} numberOfLines={1}>
+              {isKitchenShop ? 'Menu' : t((m) => m.productsTab.title)}
+            </Text>
+            <Text style={styles.heroSubtitle} numberOfLines={1}>
+              {isKitchenShop ? 'Manage your food menu items' : 'Manage your products'}
+            </Text>
+          </View>
+          <View style={styles.heroCountPill}>
+            <Text style={styles.heroCountText} numberOfLines={1}>
+              {itemCount} {itemCount === 1 ? 'Item' : 'Items'}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.heroSearchWrap}>
+          <SearchIcon color="rgba(255,255,255,0.85)" size={18} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder={isKitchenShop ? 'Search menu...' : 'Search products...'}
+            placeholderTextColor="rgba(255,255,255,0.75)"
+            autoCapitalize="none"
+            underlineColorAndroid="transparent"
+            style={styles.heroSearchInput}
+          />
+        </View>
+      </LinearGradient>
 
       <ScrollView
         horizontal
@@ -322,12 +358,14 @@ export function ProductsScreen() {
       >
         {chips.map((chip) => {
           const on = filter === chip.key;
+          const Icon = chip.Icon;
           return (
             <Pressable
               key={chip.key}
               onPress={() => setFilter(chip.key)}
               style={[styles.chip, on && styles.chipOn]}
             >
+              {Icon ? <Icon color={on ? colors.onFill : colors.muted} size={15} /> : null}
               <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
                 {chip.label}
               </Text>
@@ -354,8 +392,16 @@ export function ProductsScreen() {
         renderItem={({ item }) => {
           const low = lowIds.has(item.id);
           const kind = effectiveSellKind(item, kitchen.data.recipes);
+          const isMenuItem = isKitchenShop && kind !== 'simple';
           return (
             <Pressable onPress={() => openEdit(item)} style={styles.row}>
+              <View style={styles.rowThumb}>
+                {isMenuItem ? (
+                  <BellIcon color={colors.product} size={20} />
+                ) : (
+                  <ProductIcon color={colors.product} size={20} />
+                )}
+              </View>
               <View style={styles.rowMain}>
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name}
@@ -370,18 +416,21 @@ export function ProductsScreen() {
                             branchStock[item.stockItemId] ?? 0,
                             kitchen.data.materials.find((m) => m.id === item.stockItemId)?.unit ?? item.unit,
                           )}`
-                        : 'Menu only · no stock cut'
+                        : 'Menu only - no stock cut'
                 }
                 </Text>
               </View>
               <View style={styles.rowSide}>
-                <Text style={styles.rowPrice}>{formatRs(productSellingPrice(item))}</Text>
+                <View style={styles.rowPriceBadge}>
+                  <Text style={styles.rowPrice}>{formatRs(productSellingPrice(item))}</Text>
+                </View>
                 {low ? (
                   <View style={styles.lowBadge}>
                     <Text style={styles.lowText}>Low stock</Text>
                   </View>
                 ) : null}
               </View>
+              <ChevronRightIcon color={colors.line} size={18} />
             </Pressable>
           );
         }}
@@ -407,19 +456,40 @@ export function ProductsScreen() {
               },
             ]}
           >
+            <View style={styles.sheetGrabber} />
             <View style={styles.sheetHead}>
-              <Text style={styles.sheetTitle}>
-                {isKitchenShop && sellKind === 'menu'
-                  ? editing
-                    ? 'Edit food'
-                    : 'Add food'
-                  : editing
-                    ? 'Edit product'
-                    : t((m) => m.productsTab.add)}
-              </Text>
-              <Pressable onPress={() => setFormOpen(false)} hitSlop={10}>
-                <Text style={styles.sheetClose}>Cancel</Text>
-              </Pressable>
+              <View style={[styles.sheetAvatar, { backgroundColor: `${colors.product}1F` }]}>
+                {isKitchenShop && sellKind === 'menu' ? (
+                  <BellIcon color={colors.product} size={22} />
+                ) : (
+                  <ProductIcon color={colors.product} size={22} />
+                )}
+              </View>
+              <View style={styles.sheetHeadCopy}>
+                <Text style={styles.sheetTitle}>
+                  {isKitchenShop && sellKind === 'menu'
+                    ? editing
+                      ? 'Edit Menu Item'
+                      : 'Add Menu Item'
+                    : editing
+                      ? 'Edit Product'
+                      : t((m) => m.productsTab.add)}
+                </Text>
+                <Text style={styles.sheetSubtitle} numberOfLines={1}>
+                  {isKitchenShop && sellKind === 'menu'
+                    ? 'Add a new food or menu item'
+                    : 'Add a new product to your shop'}
+                </Text>
+              </View>
+              <AnimatedIconPress
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                onPress={() => setFormOpen(false)}
+                hitSlop={10}
+                style={[styles.sheetCloseBtn, { backgroundColor: colors.canvas }]}
+              >
+                <CloseIcon color={colors.muted} size={18} />
+              </AnimatedIconPress>
             </View>
             <ScrollView
               contentContainerStyle={[styles.sheetBody, { paddingBottom: 28 + (kbHeight > 0 ? 24 : 0) }]}
@@ -430,22 +500,35 @@ export function ProductsScreen() {
               {isKitchenShop && sellKind === 'menu' && !editing ? (
                 <Text style={styles.rowMeta}>Juice / sell price here. Recipe burger → Kitchen → + Food.</Text>
               ) : null}
-              <Field
+              <IconField
+                icon={
+                  isKitchenShop && sellKind === 'menu' ? (
+                    <BellIcon color={colors.product} size={18} />
+                  ) : (
+                    <ProductIcon color={colors.product} size={18} />
+                  )
+                }
+                iconTint={colors.product}
                 value={name}
                 onChangeText={setName}
                 placeholder={isKitchenShop && sellKind === 'menu' ? 'Food name (e.g. Burger)' : t((m) => m.productsTab.name)}
               />
               {isKitchenShop && sellKind === 'menu' ? (
-                <Field
+                <IconField
+                  icon={<TagIcon color="#15803D" size={18} />}
+                  iconTint="#15803D"
                   value={sellingPrice}
                   onChangeText={(v) => setSellingPrice(digitsOnly(v))}
-                  placeholder="Selling price (Rs)"
+                  placeholder="Selling price (Rs.)"
                   keyboardType="number-pad"
                 />
               ) : null}
               {isKitchenShop && sellKind === 'menu' ? (
                 <>
-                  <Text style={styles.label}>Link stock (optional)</Text>
+                  <View style={styles.labelRow}>
+                    <LayersIcon color="#7C3AED" size={15} />
+                    <Text style={styles.label}>Link stock (optional)</Text>
+                  </View>
                   <MaterialSelect materials={sellableItems} value={stockItemId} onChange={setStockItemId} stock={branchStock} />
                   {stockItemId ? (
                     <Pressable onPress={() => setStockItemId('')} hitSlop={8}>
@@ -453,7 +536,9 @@ export function ProductsScreen() {
                     </Pressable>
                   ) : null}
                   {chosenItem && itemKind(chosenItem) === 'direct' ? (
-                    <Field
+                    <IconField
+                      icon={<LayersIcon color="#7C3AED" size={18} />}
+                      iconTint="#7C3AED"
                       value={portion}
                       onChangeText={(v) => setPortion(v.replace(/[^\d.]/g, '').slice(0, 8))}
                       placeholder={`Portion size in ${chosenItem.unit} (e.g. 150)`}
@@ -472,7 +557,9 @@ export function ProductsScreen() {
                 <>
                   <View style={styles.twoCol}>
                     <View style={styles.col}>
-                      <Field
+                      <IconField
+                        icon={<TagIcon color="#15803D" size={18} />}
+                        iconTint="#15803D"
                         value={sellingPrice}
                         onChangeText={(v) => setSellingPrice(digitsOnly(v))}
                         placeholder={t((m) => m.productsTab.sellingPrice)}
@@ -480,7 +567,9 @@ export function ProductsScreen() {
                       />
                     </View>
                     <View style={styles.col}>
-                      <Field
+                      <IconField
+                        icon={<ExpenseIcon color="#EA580C" size={18} />}
+                        iconTint="#EA580C"
                         value={purchasePrice}
                         onChangeText={(v) => setPurchasePrice(digitsOnly(v))}
                         placeholder={t((m) => m.productsTab.purchasePrice)}
@@ -493,7 +582,9 @@ export function ProductsScreen() {
                       Profit per item: {formatRs(Number(sellingPrice) - Number(purchasePrice))}
                     </Text>
                   ) : null}
-                  <Field
+                  <IconField
+                    icon={<BoxDuoIcon color="#7C3AED" size={18} />}
+                    iconTint="#7C3AED"
                     value={stock}
                     onChangeText={(v) => setStock(digitsOnly(v))}
                     placeholder={t((m) => m.productsTab.stock)}
@@ -516,12 +607,14 @@ export function ProductsScreen() {
                     })}
                   </ScrollView>
                   <View style={styles.barcodeRow}>
-                    <Field
+                    <IconField
+                      icon={<ScanIcon color={colors.brand} size={18} />}
+                      iconTint={colors.brand}
                       value={barcode}
                       onChangeText={setBarcode}
                       placeholder="Barcode"
                       autoCapitalize="none"
-                      style={styles.barcodeField}
+                      containerStyle={styles.barcodeField}
                     />
                     <Pressable
                       accessibilityRole="button"
@@ -533,13 +626,17 @@ export function ProductsScreen() {
                       <Text style={[styles.scanBtnText, { color: colors.onFill }]}>{t((m) => m.sale.scanBarcode)}</Text>
                     </Pressable>
                   </View>
-                  <Field
+                  <IconField
+                    icon={<BoxDuoIcon color="#DC2626" size={18} />}
+                    iconTint="#DC2626"
                     value={reorderLevel}
                     onChangeText={(v) => setReorderLevel(digitsOnly(v))}
                     placeholder="Reorder when stock is at"
                     keyboardType="number-pad"
                   />
-                  <Field
+                  <IconField
+                    icon={<GridDuoIcon color="#0369A1" size={18} />}
+                    iconTint="#0369A1"
                     value={category}
                     onChangeText={setCategory}
                     placeholder={t((m) => m.productsTab.category)}
@@ -586,13 +683,69 @@ export function ProductsScreen() {
 
 function productsStyles(c: ColorPalette) {
   return {
-    count: {
+    hero: {
+      marginHorizontal: 16,
+      marginTop: 10,
+      marginBottom: 4,
+      borderRadius: 24,
+      padding: 18,
+      gap: 16,
+    },
+    heroTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    heroBack: {
+      width: 38,
+      height: 38,
+      borderRadius: 13,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroCopy: {
+      flex: 1,
+      gap: 2,
+    },
+    heroTitle: {
+      fontFamily: fonts.bold,
+      fontSize: 21,
+      color: '#FFFFFF',
+    },
+    heroSubtitle: {
       fontFamily: fonts.regular,
       fontSize: 12,
-      color: c.muted,
+      color: 'rgba(255,255,255,0.85)',
     },
-    searchWrap: {
-      paddingHorizontal: 16,
+    heroCountPill: {
+      borderRadius: 12,
+      backgroundColor: 'rgba(255,255,255,0.2)',
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+    },
+    heroCountText: {
+      fontFamily: fonts.semibold,
+      fontSize: 12,
+      color: '#FFFFFF',
+    },
+    heroSearchWrap: {
+      minHeight: 48,
+      borderRadius: 14,
+      backgroundColor: 'rgba(255,255,255,0.16)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.3)',
+      paddingHorizontal: 14,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    heroSearchInput: {
+      flex: 1,
+      height: '100%',
+      fontFamily: fonts.regular,
+      fontSize: 14,
+      color: '#FFFFFF',
     },
     barcodeRow: {
       flexDirection: 'row',
@@ -631,8 +784,10 @@ function productsStyles(c: ColorPalette) {
       borderRadius: 18,
       paddingHorizontal: 14,
       backgroundColor: c.keypad,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
+      gap: 6,
     },
     chipOn: {
       backgroundColor: c.product,
@@ -660,13 +815,21 @@ function productsStyles(c: ColorPalette) {
       color: c.muted,
     },
     row: {
-      minHeight: 64,
+      minHeight: 68,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
       borderBottomWidth: 1,
       borderBottomColor: c.rowLine,
       paddingVertical: 8,
+    },
+    rowThumb: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      backgroundColor: `${c.product}1A`,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     rowMain: {
       flex: 1,
@@ -686,10 +849,16 @@ function productsStyles(c: ColorPalette) {
       alignItems: 'flex-end',
       gap: 4,
     },
+    rowPriceBadge: {
+      borderRadius: 10,
+      backgroundColor: `${c.brand}14`,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+    },
     rowPrice: {
       fontFamily: fonts.bold,
-      fontSize: 15,
-      color: c.ink,
+      fontSize: 14,
+      color: c.brand,
     },
     lowBadge: {
       borderRadius: 8,
@@ -721,23 +890,49 @@ function productsStyles(c: ColorPalette) {
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
     },
+    sheetGrabber: {
+      alignSelf: 'center',
+      width: 40,
+      height: 4,
+      borderRadius: 2,
+      backgroundColor: c.line,
+      marginTop: 10,
+    },
     sheetHead: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
+      gap: 12,
       paddingHorizontal: 20,
-      paddingTop: 18,
-      paddingBottom: 6,
+      paddingTop: 14,
+      paddingBottom: 10,
+    },
+    sheetAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sheetHeadCopy: {
+      flex: 1,
+      gap: 2,
     },
     sheetTitle: {
       fontFamily: fonts.bold,
       fontSize: 18,
       color: c.ink,
     },
-    sheetClose: {
-      fontFamily: fonts.semibold,
-      fontSize: 14,
-      color: c.brand,
+    sheetSubtitle: {
+      fontFamily: fonts.regular,
+      fontSize: 12,
+      color: c.muted,
+    },
+    sheetCloseBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     sheetBody: {
       paddingHorizontal: 16,
@@ -760,6 +955,11 @@ function productsStyles(c: ColorPalette) {
       fontFamily: fonts.semibold,
       fontSize: 12,
       color: c.muted,
+    },
+    labelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
     },
     deleteBtn: {
       minHeight: 44,
