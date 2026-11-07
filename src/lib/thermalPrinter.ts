@@ -1,6 +1,10 @@
 import { Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { BluetoothDevice } from 'expo-bluetooth-thermal-printer';
+import type { BluetoothDevice, PaperWidth, Printer as PrinterType } from 'expo-bluetooth-thermal-printer';
+import type { Sale } from '../data/types';
+import type { ReceiptSettings } from './receiptSettings';
+import { PAYMENT_MODE_LABEL } from '../data/saleExtras';
+import { formatDay, formatRs, formatTime } from './format';
 
 const SAVED_ADDRESS = 'kb_bt_printer_address';
 
@@ -50,8 +54,13 @@ function orderPrinters(devices: BluetoothDevice[], saved: string | null) {
   return [remembered, ...list.filter((device) => device.address !== saved)];
 }
 
-/** Print plain text on a paired 58mm Bluetooth printer (PT-210 / MTP-II / PT200). */
-export async function printThermalText(text: string) {
+/**
+ * Finds a paired thermal printer, connects, runs `run` against it, then
+ * disconnects — trying each candidate device in rank order and remembering
+ * whichever one worked. Shared by the plain-text and styled-receipt paths
+ * below so the device-discovery/retry logic only lives in one place.
+ */
+async function withThermalPrinter(paperWidth: PaperWidth, run: (printer: PrinterType) => Promise<void>) {
   if (Platform.OS !== 'android') {
     throw new Error('This Bluetooth printer works on Android only.');
   }
@@ -72,18 +81,11 @@ export async function printThermalText(text: string) {
   const errors: string[] = [];
   for (const device of candidates) {
     const label = device.name || device.address;
-    const printer = new Printer('58mm');
+    const printer = new Printer(paperWidth);
     try {
       await printer.connect(device.address);
       try {
-        await printer.initialize();
-        await printer.alignLeft();
-        const width = printer.charsPerLine || 32;
-        for (const line of text.split('\n')) {
-          const row = line.length > width ? line.slice(0, width) : line;
-          await printer.println(row);
-        }
-        await printer.feed(4);
+        await run(printer);
       } finally {
         printer.disconnect();
       }
@@ -98,4 +100,90 @@ export async function printThermalText(text: string) {
   throw new Error(
     `Print failed.\n${errors.join('\n')}\nTurn the printer off and on, close other apps/browsers using it, then try again.`
   );
+}
+
+/** Print plain text on a paired 58mm Bluetooth printer (PT-210 / MTP-II / PT200). */
+export async function printThermalText(text: string) {
+  return withThermalPrinter('58mm', async (printer) => {
+    await printer.initialize();
+    await printer.alignLeft();
+    const width = printer.charsPerLine || 32;
+    for (const line of text.split('\n')) {
+      const row = line.length > width ? line.slice(0, width) : line;
+      await printer.println(row);
+    }
+    await printer.feed(4);
+  });
+}
+
+/**
+ * Styled sale receipt on a paired Bluetooth printer. A thermal printer can't
+ * reproduce BillReceipt's colours or rounded cards, but using the printer's
+ * own bold/centered/double-height/two-column (`row`) formatting instead of a
+ * flat `println` dump carries the same visual hierarchy — big bold shop name,
+ * aligned item/amount columns, bold TOTAL — onto the paper tape.
+ */
+export async function printReceiptOnThermal(options: { shopName: string; sale: Sale; settings: ReceiptSettings }) {
+  const { sale, settings } = options;
+  const paperWidth: PaperWidth = settings.paperMm === 80 ? '80mm' : '58mm';
+  const brand = (options.shopName || 'Shop').trim();
+  const billNo = sale.invoiceNo ? `${settings.invoicePrefix}-${sale.invoiceNo}` : 'Bill';
+  const lines = sale.items?.length
+    ? sale.items
+    : [{ name: 'Sale amount', qty: 1, unitPrice: sale.subtotal ?? sale.amount, lineTotal: sale.subtotal ?? sale.amount }];
+  const off = sale.discount?.amount ?? 0;
+  const subtotal = sale.subtotal ?? sale.amount + off;
+  const mode = sale.paymentMode ?? 'cash';
+  const paid = mode === 'credit' ? sale.paidAmount ?? 0 : sale.amount;
+  const balance = Math.max(0, sale.amount - paid);
+
+  return withThermalPrinter(paperWidth, async (printer) => {
+    await printer.initialize();
+    await printer.alignCenter();
+    await printer.setSize('doubleHeight');
+    await printer.bold(true);
+    await printer.println(brand.toUpperCase());
+    await printer.bold(false);
+    await printer.setSize('normal');
+    if (settings.shopLine.trim()) await printer.println(settings.shopLine.trim());
+    await printer.println(`${billNo}  ·  ${formatDay(sale.createdAt)} ${formatTime(sale.createdAt)}`);
+    await printer.alignLeft();
+    await printer.separator();
+
+    if (sale.customerName || sale.customerPhone) {
+      await printer.row('Customer', sale.customerName || sale.customerPhone || '');
+    }
+
+    await printer.separator();
+    for (const item of lines) {
+      await printer.println((item.name || 'Item').trim());
+      await printer.row(`  ${item.qty} x ${formatRs(item.unitPrice)}`, formatRs(item.lineTotal));
+    }
+    await printer.separator();
+
+    if (off > 0) {
+      await printer.row('Subtotal', formatRs(subtotal));
+      const label = sale.discount?.type === 'percent' ? `Discount (${sale.discount.value}%)` : 'Discount';
+      await printer.row(label, `-${formatRs(off)}`);
+    }
+    await printer.bold(true);
+    await printer.setSize('doubleHeight');
+    await printer.row('TOTAL', formatRs(sale.amount));
+    await printer.setSize('normal');
+    await printer.bold(false);
+
+    await printer.row('Paid by', PAYMENT_MODE_LABEL[mode]);
+    await printer.row('Received', formatRs(paid));
+    if (balance > 0) {
+      await printer.bold(true);
+      await printer.row('Balance due', formatRs(balance));
+      await printer.bold(false);
+    }
+
+    await printer.separator();
+    await printer.alignCenter();
+    await printer.println(settings.footerLine.trim() || 'Thank you!');
+    await printer.println('Powered by SMART (PVT) LTD');
+    await printer.feed(4);
+  });
 }

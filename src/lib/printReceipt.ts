@@ -2,9 +2,9 @@ import { Platform } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { Sale } from '../data/types';
-import { buildReceiptHtml, buildReceiptText } from './receipt';
+import { buildReceiptHtml } from './receipt';
 import { loadReceiptSettings, type ReceiptSettings } from './receiptSettings';
-import { printThermalText } from './thermalPrinter';
+import { printReceiptOnThermal, printThermalText } from './thermalPrinter';
 
 export type PrintResult = { ok: true } | { ok: false; message: string };
 
@@ -55,14 +55,16 @@ export async function printOrShareReceipt(
   shopName: string,
   sale: Sale,
   settingsOverride?: ReceiptSettings,
+  /** Shop logo as a data: URI (device-local avatar) — shown at the top of the HTML/PDF receipt when set. */
+  logoDataUri?: string | null,
 ): Promise<PrintResult> {
   try {
     const settings = settingsOverride ?? (await loadReceiptSettings());
     if (Platform.OS === 'android') {
-      await printThermalText(buildReceiptText({ shopName, sale, settings }));
+      await printReceiptOnThermal({ shopName, sale, settings });
       return { ok: true };
     }
-    const html = buildReceiptHtml({ shopName, sale, settings });
+    const html = buildReceiptHtml({ shopName, sale, settings, logoDataUri });
     return outputHtml(html, 'Receipt');
   } catch (error) {
     return { ok: false, message: friendlyPrintError(error) };
@@ -70,9 +72,14 @@ export async function printOrShareReceipt(
 }
 
 /** PDF share sheet (WhatsApp, Drive, Save). Does not send the bill to the Bluetooth printer. */
-export async function shareReceiptPdf(shopName: string, sale: Sale, settingsOverride?: ReceiptSettings): Promise<PrintResult> {
+export async function shareReceiptPdf(
+  shopName: string,
+  sale: Sale,
+  settingsOverride?: ReceiptSettings,
+  logoDataUri?: string | null,
+): Promise<PrintResult> {
   const settings = settingsOverride ?? (await loadReceiptSettings());
-  const html = buildReceiptHtml({ shopName, sale, settings });
+  const html = buildReceiptHtml({ shopName, sale, settings, logoDataUri });
   return outputHtml(html, 'Share receipt');
 }
 

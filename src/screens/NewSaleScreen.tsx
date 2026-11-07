@@ -10,6 +10,7 @@ import { SaleCheckoutModal } from '../components/SaleCheckoutModal';
 import { Toast, useToast } from '../components/Toast';
 import { ScanIcon, SearchIcon, CartDuoIcon, ReceiptDuoIcon, BackIcon, CheckIcon } from '../components/Icons';
 import { gradients } from '../components/DashboardCards';
+import { loadAvatar } from '../lib/avatarPreference';
 import { Designable } from '../devtools/designMode/Designable';
 import { newSaleLayout } from '../designConfig/newSale';
 import { BranchChips } from '../components/kitchen/KitchenUi';
@@ -384,7 +385,8 @@ export function NewSaleScreen() {
 
   async function printLast() {
     if (!lastSale) return;
-    const result = await printFx.run(() => printOrShareReceipt(user?.shopName ?? 'KadaBook', lastSale));
+    const logoUri = user?.uid ? await loadAvatar(user.uid).catch(() => null) : null;
+    const result = await printFx.run(() => printOrShareReceipt(user?.shopName ?? 'KadaBook', lastSale, undefined, logoUri));
     if (!result) return;
     if (result.ok) toast.show('success', 'Receipt printed');
     else toast.show('error', `${t((m) => m.settings.printFailed)}: ${result.message}`);

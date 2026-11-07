@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAvatar } from '../hooks/useAvatar';
 import { PAYMENT_MODE_LABEL } from '../data/saleExtras';
 import type { Sale } from '../data/types';
 import { formatDay, formatRs, formatTime } from '../lib/format';
@@ -19,6 +21,8 @@ function money(value: number) {
  */
 export function BillReceipt({ sale, shopName }: { sale: Sale; shopName: string }) {
   const { colors } = useTheme();
+  const { user } = useAuth();
+  const avatar = useAvatar(user?.uid);
   const [settings, setSettings] = useState<ReceiptSettings>(DEFAULT_RECEIPT_SETTINGS);
 
   useEffect(() => {
@@ -69,9 +73,13 @@ export function BillReceipt({ sale, shopName }: { sale: Sale; shopName: string }
       <View style={[styles.paper, { backgroundColor: colors.white, borderColor: colors.line }]}>
         {/* Shop header */}
         <View style={styles.header}>
-          <View style={[styles.logo, { backgroundColor: colors.brand }]}>
-            <Text style={[styles.logoText, { color: colors.onFill }]}>{(shopName.trim()[0] ?? 'K').toUpperCase()}</Text>
-          </View>
+          {avatar.uri ? (
+            <Image source={{ uri: avatar.uri }} style={styles.logoImage} />
+          ) : (
+            <View style={[styles.logo, { backgroundColor: colors.brand }]}>
+              <Text style={[styles.logoText, { color: colors.onFill }]}>{(shopName.trim()[0] ?? 'K').toUpperCase()}</Text>
+            </View>
+          )}
           <Text style={[styles.shopName, ink]} numberOfLines={2}>
             {shopName}
           </Text>
@@ -156,7 +164,7 @@ export function BillReceipt({ sale, shopName }: { sale: Sale; shopName: string }
 
         {/* Footer */}
         <Text style={[styles.footer, ink]}>{settings.footerLine.trim() || 'Thank you!'}</Text>
-        <Text style={[styles.powered, muted]}>Powered by KadaBook</Text>
+        <Text style={[styles.powered, muted]}>Powered by SMART [PVT] LTD</Text>
       </View>
     </View>
   );
@@ -197,6 +205,7 @@ const styles = StyleSheet.create({
   paper: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 16, gap: 8 },
   header: { alignItems: 'center', gap: 4 },
   logo: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  logoImage: { width: 44, height: 44, borderRadius: 22, marginBottom: 4 },
   logoText: { fontFamily: fonts.bold, fontSize: 20 },
   shopName: { fontFamily: fonts.bold, fontSize: 20, textAlign: 'center', letterSpacing: 0.3 },
   shopLine: { fontFamily: fonts.regular, fontSize: 12, textAlign: 'center', lineHeight: 16 },

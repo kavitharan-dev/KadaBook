@@ -127,7 +127,7 @@ export function SaleCheckoutModal({
             <View style={styles.actions}>
               <View style={styles.flex}>
                 {sale ? (
-                  <PrintButton phase={printPhase} onPress={onPrint} label={`🖨  ${t((m) => m.salesTab.print)}`} large />
+                  <PrintButton phase={printPhase} onPress={onPrint} label={t((m) => m.salesTab.print)} large />
                 ) : null}
               </View>
               <Pressable

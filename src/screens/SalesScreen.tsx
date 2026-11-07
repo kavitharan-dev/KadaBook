@@ -19,6 +19,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useVisibleBooks } from '../context/KitchenContext';
 import { useI18n } from '../context/LocaleContext';
 import { confirmDelete } from '../lib/confirm';
+import { loadAvatar } from '../lib/avatarPreference';
 import { formatDay, formatRs, formatTime, isSameDay, startOfDay, sum } from '../lib/format';
 import { printOrShareReceipt } from '../lib/printReceipt';
 import { usePrintFeedback } from '../lib/usePrintFeedback';
@@ -57,7 +58,8 @@ export function SalesScreen() {
 
   async function printSale(sale: (typeof sales)[number]) {
     setPrintingId(sale.id);
-    const result = await printFx.run(() => printOrShareReceipt(user?.shopName ?? 'KadaBook', sale));
+    const logoUri = user?.uid ? await loadAvatar(user.uid).catch(() => null) : null;
+    const result = await printFx.run(() => printOrShareReceipt(user?.shopName ?? 'KadaBook', sale, undefined, logoUri));
     if (result && !result.ok) {
       Alert.alert(t((m) => m.settings.printFailed), result.message);
     }
