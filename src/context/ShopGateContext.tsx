@@ -72,6 +72,7 @@ function mapProfile(data: Record<string, unknown> | undefined): ShopProfile {
     phone: data?.phone ? String(data.phone) : null,
     email: data?.email ? String(data.email) : undefined,
     district: data?.district ? String(data.district) : undefined,
+    gstin: data?.gstin ? String(data.gstin) : undefined,
     shopType: data?.shopType === 'retail' || data?.shopType === 'kitchen' ? data.shopType : undefined,
     status: typeof data?.status === 'string' ? (data.status as ShopStatus) : 'active',
     rejectReason: data?.rejectReason ? String(data.rejectReason) : undefined,

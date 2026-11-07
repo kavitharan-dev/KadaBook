@@ -316,6 +316,17 @@ export const localRepository: Repository = {
     await writeAccounts(accounts);
     await emitSession();
   },
+  async updateShopProfile(uid, patch) {
+    // Offline mode has no `users/{uid}` profile doc (ShopGateContext never fetches one
+    // without cloud), so only shopName — the one field also on ShopUser — actually persists.
+    if (typeof patch.shopName !== 'string') return;
+    const accounts = await readAccounts();
+    const account = accounts.find((item) => item.uid === uid);
+    if (!account) return;
+    account.shopName = patch.shopName.trim();
+    await writeAccounts(accounts);
+    await emitSession();
+  },
   async setOpeningBalance(uid, dayKey, amount) {
     const books = await readBooks(uid);
     const balances = { ...(books.meta.openingBalances ?? {}), [dayKey]: Math.round(amount) };

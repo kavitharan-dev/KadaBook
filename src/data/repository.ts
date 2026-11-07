@@ -48,6 +48,11 @@ export type Repository = {
   deleteSavedOrder(uid: string, id: string): Promise<void>;
   updateShopName(uid: string, shopName: string): Promise<void>;
   updateShopType(uid: string, shopType: 'retail' | 'kitchen'): Promise<void>;
+  /** Merges whichever of these fields are provided into the shop's profile. */
+  updateShopProfile(
+    uid: string,
+    patch: Partial<{ shopName: string; ownerName: string; phone: string; email: string; district: string; gstin: string }>,
+  ): Promise<void>;
   setOpeningBalance(uid: string, dayKey: string, amount: number): Promise<void>;
   /** Soft day close. Pass null closedAt to resume (clear the mark). */
   setDayClosed(uid: string, dayKey: string, closedAt: number | null): Promise<void>;

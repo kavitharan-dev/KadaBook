@@ -982,6 +982,14 @@ export const cloudRepository: Repository = {
   async updateShopType(uid, shopType) {
     await setDoc(doc(firestore(), 'users', uid), { shopType }, { merge: true });
   },
+  async updateShopProfile(uid, patch) {
+    const clean: Record<string, string> = {};
+    for (const [key, value] of Object.entries(patch)) {
+      if (typeof value === 'string') clean[key] = value.trim();
+    }
+    if (Object.keys(clean).length === 0) return;
+    await setDoc(doc(firestore(), 'users', uid), clean, { merge: true });
+  },
   async setOpeningBalance(uid, dayKey, amount) {
     const ref = doc(firestore(), 'users', uid);
     // setDoc treats a dotted key as one literal field name, so nest the day key for the merge.

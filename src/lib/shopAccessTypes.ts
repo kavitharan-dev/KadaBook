@@ -90,6 +90,8 @@ export type ShopProfile = {
   phone?: string | null;
   email?: string;
   district?: string;
+  /** GST / tax registration number, shown on receipts. */
+  gstin?: string;
   /** retail = hide Kitchen & Stock; kitchen = show it. */
   shopType?: 'retail' | 'kitchen';
   status: ShopStatus;

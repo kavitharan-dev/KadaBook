@@ -13,6 +13,9 @@ type AuthContextValue = {
   signOut: () => Promise<void>;
   updateShopName: (shopName: string) => Promise<void>;
   updateShopType: (shopType: 'retail' | 'kitchen') => Promise<void>;
+  updateShopProfile: (
+    patch: Partial<{ shopName: string; ownerName: string; phone: string; email: string; district: string; gstin: string }>,
+  ) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -74,6 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!user) return;
       await repository.updateShopType(user.uid, shopType);
       setUser({ ...user, shopType });
+    },
+    async updateShopProfile(patch) {
+      if (!user) return;
+      await repository.updateShopProfile(user.uid, patch);
+      if (typeof patch.shopName === 'string' && patch.shopName.trim()) {
+        setUser({ ...user, shopName: patch.shopName.trim() });
+      }
     },
   }), [ready, user]);
 
