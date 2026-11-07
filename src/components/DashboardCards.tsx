@@ -23,13 +23,17 @@ type IconType = ComponentType<{ color?: string; size?: number }>;
 
 const DASHBOARD_SHOP_IMAGE = require('../../assets/dashboard/dashboard-card-shop-img.png');
 
+/** Sampled directly from assets/screens-ui/dashboard-ui.png's hero card — not shared, only HeroSalesCard uses this. */
+const HERO_GRADIENT = ['#002FBA', '#004ADF', '#0176F8'] as const;
+
+/** Colors sampled pixel-for-pixel from assets/screens-ui/dashboard-ui.png (Quick Action badges + the This Month cards). */
 export const gradients = {
-  blue: ['#1E40AF', '#2563EB', '#3B82F6'],
-  purple: ['#6D28D9', '#8B5CF6', '#A855F7'],
-  teal: ['#0F766E', '#14A38E', '#2DD4BF'],
-  orange: ['#EA580C', '#F97316', '#FBBF24'],
-  green: ['#15803D', '#22A447', '#4ADE80'],
-  red: ['#DC2626', '#EF4444', '#F87171'],
+  blue: ['#004AE0', '#4D86ED', '#9BC3FA'],
+  purple: ['#6E28F2', '#844DF3', '#9E78F4'],
+  teal: ['#027B62', '#029C7E', '#2AB89A'],
+  orange: ['#FD6402', '#FE820E', '#FDA63F'],
+  green: ['#028625', '#0BA02C', '#4BC14A'],
+  red: ['#F3282A', '#F65C57', '#F8908A'],
 } as const;
 
 /** Money that rolls up to its value. */
@@ -98,12 +102,18 @@ function ShimmerSweep({ every = 4200 }: { every?: number }) {
   );
 }
 
-/** Soft diagonal light bands low in the card, standing in for the old background photo's wave art. */
+/**
+ * Layered ellipse "hills" + a bright bottom highlight — a color-only stand-in
+ * for the old background photo's glossy wave art. Dark/light overlays (not
+ * fixed hex colors) so it reads correctly over every gradient color this
+ * card shell is used with, not just blue.
+ */
 function WaveAccent() {
   return (
-    <View pointerEvents="none" style={styles.waveClip}>
-      <View style={styles.waveBandBack} />
-      <View style={styles.waveBandFront} />
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={styles.hillDarkBack} />
+      <View style={styles.hillDarkFront} />
+      <View style={styles.hillLight} />
     </View>
   );
 }
@@ -238,8 +248,8 @@ export function HeroSalesCard({
   return (
     <CardShell
       delay={delay}
-      gradient={gradients.blue}
-      glow="rgba(37,99,235,0.35)"
+      gradient={HERO_GRADIENT}
+      glow="rgba(0,74,224,0.35)"
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityLabel={`${title}. ${label}`}
@@ -436,33 +446,32 @@ const styles = StyleSheet.create({
     left: -25,
     backgroundColor: 'rgba(255,255,255,0.09)',
   },
-  waveClip: {
+  hillDarkBack: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: '68%',
-    overflow: 'hidden',
-  },
-  waveBandBack: {
-    position: 'absolute',
-    left: '-15%',
-    right: '5%',
-    bottom: -78,
-    height: 150,
+    width: '120%',
+    height: '320%',
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    transform: [{ rotate: '-5deg' }],
+    top: '-220%',
+    right: '-30%',
+    backgroundColor: 'rgba(0,0,0,0.12)',
   },
-  waveBandFront: {
+  hillDarkFront: {
     position: 'absolute',
-    left: '-20%',
-    right: '-10%',
-    bottom: -46,
-    height: 120,
+    width: '110%',
+    height: '300%',
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    transform: [{ rotate: '-4deg' }],
+    bottom: '-210%',
+    left: '-25%',
+    backgroundColor: 'rgba(0,0,0,0.09)',
+  },
+  hillLight: {
+    position: 'absolute',
+    width: '140%',
+    height: '260%',
+    borderRadius: 999,
+    bottom: '-215%',
+    left: '-10%',
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   shimmer: {
     position: 'absolute',

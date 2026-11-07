@@ -7,9 +7,29 @@ import { useTheme } from '../context/ThemeContext';
 import type { ColorPalette } from '../theme/palettes';
 import { fonts } from '../theme/fonts';
 
-export function Screen({ children }: { children: ReactNode }) {
+export function Screen({
+  children,
+  background,
+  edgeToEdgeTop = false,
+}: {
+  children: ReactNode;
+  /** Rendered behind everything, above the safe-area padding — use for a full-bleed background that must extend under the status bar. Only meaningful with `edgeToEdgeTop`. */
+  background?: ReactNode;
+  /** Lets `background` paint behind the status bar instead of the padded content starting there too. */
+  edgeToEdgeTop?: boolean;
+}) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+
+  if (edgeToEdgeTop) {
+    return (
+      <View style={[styles.screen, { backgroundColor: colors.white }]}>
+        {background}
+        <View style={[styles.screen, { paddingTop: insets.top }]}>{children}</View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: colors.white }]}>{children}</View>
   );

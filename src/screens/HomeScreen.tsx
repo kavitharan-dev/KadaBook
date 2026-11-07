@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -119,9 +121,10 @@ export function HomeScreen() {
   const canCloseDay = can('closeDay');
   const canSeeReports = can('viewReports') && has('fullReports');
   const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [chromeHeight, setChromeHeight] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
-  const bgHeight = Math.max(screenHeight, chromeHeight + scrollContentHeight);
+  const bgHeight = Math.max(screenHeight, insets.top + chromeHeight + scrollContentHeight);
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [openingModal, setOpeningModal] = useState(false);
   const [openingEditing, setOpeningEditing] = useState(false);
@@ -282,8 +285,13 @@ export function HomeScreen() {
   }, [resumeToday, t]);
 
   return (
-    <Screen>
-      <ImageBackground source={DASHBOARD_BACKGROUND} resizeMode="cover" style={[styles.dashboardBg, { height: bgHeight }]} pointerEvents="none" />
+    <Screen
+      edgeToEdgeTop
+      background={
+        <ImageBackground source={DASHBOARD_BACKGROUND} resizeMode="cover" style={[styles.dashboardBg, { height: bgHeight }]} pointerEvents="none" />
+      }
+    >
+      <StatusBar style="light" />
       <AccessBlockedModal visible={blockedOpen} onClose={() => setBlockedOpen(false)} />
       <OpeningBalanceModal
         visible={openingModal || openingEditing}
@@ -461,7 +469,7 @@ export function HomeScreen() {
           <GradientStatCard
             delay={560}
             gradient={gradients.teal}
-            glow="rgba(20,163,142,0.32)"
+            glow="rgba(2,123,98,0.32)"
             label={t((m) => m.home.totalSales)}
             value={monthSales}
             chip={t((m) => m.home.salesCount, { count: monthSaleList.length })}
@@ -473,7 +481,7 @@ export function HomeScreen() {
           <GradientStatCard
             delay={640}
             gradient={gradients.orange}
-            glow="rgba(249,115,22,0.32)"
+            glow="rgba(253,100,2,0.32)"
             label={t((m) => m.home.totalExpenses)}
             value={monthExpenses}
             chip={monthPurchases > 0 ? `Stock ${formatRs(monthPurchases)}` : t((m) => m.home.expensesCount, { count: monthRunning.length })}
@@ -485,7 +493,7 @@ export function HomeScreen() {
           <GradientStatCard
             delay={720}
             gradient={monthProfit >= 0 ? gradients.green : gradients.red}
-            glow={monthProfit >= 0 ? 'rgba(34,164,71,0.32)' : 'rgba(239,68,68,0.32)'}
+            glow={monthProfit >= 0 ? 'rgba(2,134,37,0.32)' : 'rgba(243,40,42,0.32)'}
             label={t((m) => m.home.profit)}
             value={monthProfit}
             chip={t((m) => m.home.margin, { percent: margin })}
