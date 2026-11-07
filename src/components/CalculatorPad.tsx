@@ -55,7 +55,7 @@ const ROWS: KeyDef[][] = [
 
 type PadState = { expr: string; fresh: boolean };
 
-const MAX_LENGTH = 16;
+const MAX_LENGTH = 60;
 const lastNumber = (expr: string) => expr.split(/[+\-*/]/).pop() ?? '';
 
 function reduce(state: PadState, key: KeyDef): PadState {
@@ -150,7 +150,7 @@ export function CalculatorPad({
       <View
         style={[styles.display, { backgroundColor: colors.keypad, minHeight: displayMinHeight, borderColor: colors.line }]}
       >
-        <Text style={[styles.expr, { color: colors.muted }]} numberOfLines={1}>
+        <Text style={[styles.expr, { color: colors.muted }]}>
           {hasOp ? prettyExpression(pad.expr) : ' '}
         </Text>
         <View style={styles.valueRow}>
