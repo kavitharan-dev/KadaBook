@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { doc, getDoc } from 'firebase/firestore';
+import { ChatDuoIcon, DocumentDuoIcon, StarDuoIcon } from '../components/Icons';
 import { PlanComparison } from '../components/PlanComparison';
 import { SettingsRow } from '../components/SettingsRow';
 import { Field, FillButton, Header, Screen } from '../components/ui';
@@ -28,35 +29,35 @@ import { fonts } from '../theme/fonts';
 export function SettingsMenuScreen() {
   const navigation = useNavigation();
   const { t } = useI18n();
+  const { colors } = useTheme();
   return (
     <Screen>
       <Header title={t((m) => m.settings.title)} onBack={() => navigation.goBack()} />
-      <ScrollView>
-        <SettingsRow
-          title={t((m) => m.tips.title)}
-          subtitle={t((m) => m.tips.endSaleTitle)}
-          onPress={() => navigation.navigate('TipsHelp' as never)}
-        />
-        <SettingsRow
-          title={t((m) => m.settings.receiptTitle)}
-          subtitle={t((m) => m.settings.receiptSub)}
-          onPress={() => navigation.navigate('ReceiptSettings' as never)}
-        />
-        <SettingsRow
-          title="Credit & WhatsApp"
-          subtitle="Shop WhatsApp number, reminder and receipt messages"
-          onPress={() => navigation.navigate('CreditSettings' as never)}
-        />
-        <SettingsRow
-          title={t((m) => m.settings.themeTitle)}
-          subtitle={t((m) => m.settings.themeSub)}
-          onPress={() => navigation.navigate('ThemeSettings' as never)}
-        />
-        <SettingsRow
-          title={t((m) => m.settings.upgradeTitle)}
-          subtitle={t((m) => m.settings.upgradeSub)}
-          onPress={() => navigation.navigate('UpgradePlan' as never)}
-        />
+      <ScrollView contentContainerStyle={styles.menuBody}>
+        <View style={[styles.menuCard, { borderColor: colors.hairline, backgroundColor: colors.white }]}>
+          <SettingsRow
+            title={t((m) => m.settings.receiptTitle)}
+            subtitle={t((m) => m.settings.receiptSub)}
+            onPress={() => navigation.navigate('ReceiptSettings' as never)}
+            Icon={DocumentDuoIcon}
+            tint="#334155"
+          />
+          <SettingsRow
+            title="Credit & WhatsApp"
+            subtitle="Shop WhatsApp number, reminder and receipt messages"
+            onPress={() => navigation.navigate('CreditSettings' as never)}
+            Icon={ChatDuoIcon}
+            tint="#0F766E"
+          />
+          <SettingsRow
+            title={t((m) => m.settings.upgradeTitle)}
+            subtitle={t((m) => m.settings.upgradeSub)}
+            onPress={() => navigation.navigate('UpgradePlan' as never)}
+            Icon={StarDuoIcon}
+            tint="#D97706"
+            last
+          />
+        </View>
       </ScrollView>
     </Screen>
   );
@@ -348,6 +349,14 @@ const styles = StyleSheet.create({
   body: {
     padding: 16,
     gap: 12,
+  },
+  menuBody: {
+    padding: 16,
+  },
+  menuCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   label: {
     fontFamily: fonts.semibold,

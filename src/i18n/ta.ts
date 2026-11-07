@@ -237,7 +237,7 @@ export const ta: Messages = {
     title: 'அமைப்புகள்',
     shopName: 'கடை பெயர்',
     saveShop: 'கடை விவரங்களை சேமி',
-    shopSaved: 'கடை பெயர் சேமிக்கப்பட்டது.',
+    shopSaved: 'கடை விவரங்கள் சேமிக்கப்பட்டது.',
     shopError: 'கடை பெயரை சேமிக்க முடியவில்லை.',
     quickProfitPercent: 'விரைவு விற்பனை லாப %',
     quickProfitPercentHint: 'தொகை மட்டும் விற்பனைக்கு daily report-ல் (இயல்பு 10).',

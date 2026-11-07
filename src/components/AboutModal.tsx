@@ -11,7 +11,7 @@ export function AboutModal({ visible, onClose }: { visible: boolean; onClose: ()
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable onPress={(e) => e.stopPropagation()} style={[styles.card, { backgroundColor: colors.white }]}>
-          <Image source={LOGO} resizeMode="contain" style={styles.logo} />
+          <Image source={LOGO} resizeMode="contain" style={styles.logo} accessibilityIgnoresInvertColors />
           <Text style={[styles.name, { color: colors.ink }]}>
             Kada<Text style={{ color: colors.brand }}>Book</Text>
           </Text>
@@ -46,8 +46,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   logo: {
-    width: 68,
-    height: 68,
+    width: 108,
+    height: 108,
     marginBottom: 6,
   },
   name: {

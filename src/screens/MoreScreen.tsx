@@ -28,10 +28,12 @@ import {
 } from '../components/Icons';
 import { AboutModal } from '../components/AboutModal';
 import { markSignedOut, usePinLock } from '../components/PinLockGate';
+import { UpdateModal } from '../components/UpdateModal';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import type { Locale } from '../i18n';
 import { useAuth } from '../context/AuthContext';
 import { useAvatar } from '../hooks/useAvatar';
+import { useUpdateCheck } from '../hooks/useUpdateCheck';
 import { useBooks } from '../context/BooksContext';
 import { ROLE_LABEL, useRole } from '../lib/roles';
 import { useTheme } from '../context/ThemeContext';
@@ -42,7 +44,6 @@ import { resolveQuickSaleProfitPercent } from '../lib/dayClose';
 import { formatShortDay } from '../lib/format';
 import type { AppStackParamList, TabParamList } from '../navigation/types';
 import { APP_VERSION, BUILD_TAG } from '../config/build';
-import * as Updates from 'expo-updates';
 import { printThermalText } from '../lib/thermalPrinter';
 import { usesKitchenStock } from '../lib/shopType';
 import { useTier } from '../lib/useTier';
@@ -89,6 +90,7 @@ function Section({
 function Row({
   title,
   subtitle,
+  subtitleColor,
   onPress,
   last,
   right,
@@ -97,6 +99,7 @@ function Row({
 }: {
   title: string;
   subtitle?: string;
+  subtitleColor?: string;
   onPress?: () => void;
   last?: boolean;
   right?: ReactNode;
@@ -104,6 +107,7 @@ function Row({
   tint?: string;
 }) {
   const styles = useStyleSheet(moreStyles);
+  const { colors } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -118,12 +122,12 @@ function Row({
       <View style={styles.rowCopy}>
         <Text style={styles.rowTitle}>{title}</Text>
         {subtitle ? (
-          <Text style={styles.rowSub} numberOfLines={2}>
+          <Text style={[styles.rowSub, subtitleColor ? { color: subtitleColor } : null]} numberOfLines={2}>
             {subtitle}
           </Text>
         ) : null}
       </View>
-      {right ?? (onPress ? <Text style={styles.chevron}>›</Text> : null)}
+      {right ?? (onPress ? <ChevronRightIcon color={colors.muted} size={20} /> : null)}
     </Pressable>
   );
 }
@@ -151,11 +155,12 @@ export function MoreScreen() {
   const isOwner = role === 'owner';
   const { profile, status, trialDays, subscription } = useShopGate();
   const { changePin, pinEnabled, enablePin, disablePin } = usePinLock();
-  const { colors } = useTheme();
+  const { colors, theme, setTheme } = useTheme();
   const { locale, setLocale, t } = useI18n();
   const { width } = useWindowDimensions();
   const wide = width >= 700;
   const avatar = useAvatar(user?.uid);
+  const appUpdate = useUpdateCheck();
 
   // Real shop name comes from the account profile; fall back to the signed-in user.
   const currentName =
@@ -171,6 +176,7 @@ export function MoreScreen() {
   const [quickPctInput, setQuickPctInput] = useState(String(savedQuickPct));
   const [quickExpanded, setQuickExpanded] = useState(false);
   const [langExpanded, setLangExpanded] = useState(false);
+  const [themeExpanded, setThemeExpanded] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +241,13 @@ export function MoreScreen() {
   return (
     <Screen>
       <AboutModal visible={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <UpdateModal
+        visible={appUpdate.modalOpen}
+        phase={appUpdate.phase}
+        error={appUpdate.error}
+        onClose={appUpdate.close}
+        onRestart={appUpdate.restart}
+      />
       <Header title={t((m) => m.more.title)} onBack={() => navigation.navigate('Home')} />
       <ScrollView
         contentContainerStyle={[styles.body, wide && styles.bodyWide]}
@@ -359,12 +372,36 @@ export function MoreScreen() {
           ) : null}
           <Row
             title={t((m) => m.settings.themeTitle)}
-            subtitle={t((m) => m.settings.themeSub)}
-            onPress={() => navigation.navigate('ThemeSettings')}
+            subtitle={theme === 'dark' ? t((m) => m.settings.themeDark) : t((m) => m.settings.themeLight)}
+            onPress={() => setThemeExpanded((v) => !v)}
             Icon={SunIcon}
             tint="#D97706"
-            last
+            last={!themeExpanded}
+            right={<DisclosureChevron open={themeExpanded} color={colors.muted} />}
           />
+          {themeExpanded ? (
+            <View style={[styles.cardPad, styles.rowLine]}>
+              <View style={styles.langRow}>
+                {(['light', 'dark'] as const).map((mode) => {
+                  const active = theme === mode;
+                  return (
+                    <Pressable
+                      key={mode}
+                      onPress={() => {
+                        setTheme(mode);
+                        setThemeExpanded(false);
+                      }}
+                      style={[styles.langChip, active && styles.langChipOn]}
+                    >
+                      <Text style={[styles.langChipText, active && styles.langChipTextOn]}>
+                        {mode === 'light' ? t((m) => m.settings.themeLight) : t((m) => m.settings.themeDark)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
         </Section>
 
         <Section label="Security & team" Icon={ShieldIcon} tint="#DC2626">
@@ -523,31 +560,24 @@ export function MoreScreen() {
           <Row title="Update tag" subtitle={BUILD_TAG} />
           <Row
             title="Check for update"
-            subtitle="Tap to download the latest OTA now"
+            subtitle={
+              appUpdate.phase === 'disabled'
+                ? 'Updates are off in this build (dev)'
+                : appUpdate.phase === 'available' || appUpdate.phase === 'downloading' || appUpdate.phase === 'ready'
+                  ? 'New update available'
+                  : appUpdate.phase === 'error'
+                    ? 'Could not check for updates'
+                    : appUpdate.phase === 'idle' || appUpdate.phase === 'checking'
+                      ? 'Checking for updates…'
+                      : "You're updated to the latest version"
+            }
+            subtitleColor={
+              appUpdate.phase === 'available' || appUpdate.phase === 'downloading' || appUpdate.phase === 'ready'
+                ? colors.saleText
+                : undefined
+            }
             last
-            onPress={async () => {
-              try {
-                if (__DEV__ || !Updates.isEnabled) {
-                  Alert.alert('Update', 'Updates are off in this build (dev or disabled). Install the preview APK.');
-                  return;
-                }
-                const channel = Updates.channel ?? '(none)';
-                const runtime = Updates.runtimeVersion ?? '(none)';
-                const check = await Updates.checkForUpdateAsync();
-                if (!check.isAvailable) {
-                  Alert.alert(
-                    'Update',
-                    `No new update.\nChannel: ${channel}\nRuntime: ${runtime}\nCurrent: ${Updates.updateId ?? 'embedded'}`,
-                  );
-                  return;
-                }
-                Alert.alert('Update', 'Downloading…');
-                await Updates.fetchUpdateAsync();
-                await Updates.reloadAsync();
-              } catch (error) {
-                Alert.alert('Update failed', error instanceof Error ? error.message : String(error));
-              }
-            }}
+            onPress={appUpdate.openAndCheck}
           />
         </Section>
 
@@ -729,11 +759,6 @@ function moreStyles(c: ColorPalette) {
       fontFamily: fonts.regular,
       fontSize: 12,
       lineHeight: 17,
-      color: c.muted,
-    },
-    chevron: {
-      fontSize: 26,
-      lineHeight: 28,
       color: c.muted,
     },
     fieldLabel: {

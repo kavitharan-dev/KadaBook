@@ -136,6 +136,14 @@ export const DocumentDuoIcon = createDuoIcon(
   'M7 3h7l4 4v14H7z',
   'M7 3h7l4 4v14H7zM14 3v4h4M9 9h3M9 13h6M9 17h6',
 );
+export const StarDuoIcon = createDuoIcon(
+  'M12 3l2.6 5.6 6 .7-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.4 9.3l6-.7z',
+  'M12 3l2.6 5.6 6 .7-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.4 9.3l6-.7z',
+);
+export const ChatDuoIcon = createDuoIcon(
+  'M4 5h16v11H9l-5 4z',
+  'M4 5h16v11H9l-5 4zM8 9h8M8 12.5h5',
+);
 export const GlobeOutlineIcon = createIcon(
   'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
 );

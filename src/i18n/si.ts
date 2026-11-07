@@ -237,7 +237,7 @@ export const si: Messages = {
     title: 'සැකසුම්',
     shopName: 'කඩ නම',
     saveShop: 'කඩ විස්තර සුරකින්න',
-    shopSaved: 'කඩ නම සුරකින ලදී.',
+    shopSaved: 'කඩ විස්තර සුරකින ලදී.',
     shopError: 'කඩ නම සුරැකිය නොහැක.',
     quickProfitPercent: 'ඉක්මන් විකුණුම් ලාභ %',
     quickProfitPercentHint: 'මුදල පමණක් විකුණුම් සඳහා දෛනික වාර්තාවේ (පෙරනිමි 10).',

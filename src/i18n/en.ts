@@ -237,7 +237,7 @@ export const en: Messages = {
     title: 'Settings',
     shopName: 'Shop name',
     saveShop: 'Save Shop Details',
-    shopSaved: 'Shop name saved.',
+    shopSaved: 'Shop details saved.',
     shopError: 'Could not save the shop name.',
     quickProfitPercent: 'Quick sale profit %',
     quickProfitPercentHint: 'Used on daily report for amount-only sales (default 10).',

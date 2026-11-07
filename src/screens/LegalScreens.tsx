@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { ChevronRightIcon } from '../components/Icons';
 import { Header, Screen } from '../components/ui';
 import { useTheme } from '../context/ThemeContext';
 import type { ColorPalette } from '../theme/palettes';
@@ -220,7 +221,9 @@ export function FaqScreen() {
             >
               <View style={styles.faqHead}>
                 <Text style={styles.faqQ}>{item.q}</Text>
-                <Text style={[styles.faqCaret, open && styles.faqCaretOpen]}>⌄</Text>
+                <View style={{ transform: [{ rotate: open ? '90deg' : '0deg' }] }}>
+                  <ChevronRightIcon color={open ? colors.brand : colors.muted} size={20} />
+                </View>
               </View>
               {open ? <Text style={styles.faqA}>{item.a}</Text> : null}
             </Pressable>
@@ -274,13 +277,6 @@ function legalStyles(c: ColorPalette) {
       fontFamily: fonts.semibold,
       fontSize: 14.5,
       color: c.ink,
-    },
-    faqCaret: {
-      fontSize: 18,
-      color: c.muted,
-    },
-    faqCaretOpen: {
-      color: c.brand,
     },
     faqA: {
       fontFamily: fonts.regular,
