@@ -51,7 +51,6 @@ import {
 import { buildKitchenDayReportExtras } from '../lib/kitchenDailyReport';
 import { useRole } from '../lib/roles';
 import { usesKitchenStock } from '../lib/shopType';
-import { changePercent } from '../lib/stats';
 import { markOpeningPromptDay, needsOpeningBalancePrompt, readOpeningPromptDay } from '../lib/openingPrompt';
 import type { TierFeature } from '../lib/tiers';
 import { usePrintFeedback } from '../lib/usePrintFeedback';
@@ -101,7 +100,7 @@ export function HomeScreen() {
   const branches = kitchen.data.branches;
   // Everything on this screen follows the branch switcher; staff tied to a branch only ever see theirs.
   const scoped = useMemo(() => scopeBooks(books, kitchen.scope, branches), [books, kitchen.scope, branches]);
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const { colors } = useTheme();
   const { canAccess, profile } = useShopGate();
   const { can, role } = useRole();
@@ -145,7 +144,6 @@ export function HomeScreen() {
   const salesToday = sum(salesTodayList);
   const todaySales = salesToday;
   const yesterdaySales = sum(scoped.sales.filter((sale) => isSameDay(sale.createdAt, yesterday)));
-  const percent = changePercent(todaySales, yesterdaySales);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
   const monthSaleList = scoped.sales.filter((sale) => sale.createdAt >= monthStart);
   const monthExpenseList = scoped.expenses.filter((expense) => expense.createdAt >= monthStart);
@@ -395,13 +393,11 @@ export function HomeScreen() {
             subtitle={t((m) => m.home.dashboardSub)}
             label={t((m) => m.home.todaySales)}
             amount={todaySales}
-            percent={percent}
-            hint={
-              openingToday > 0 || daySummary.expectedCash !== 0
-                ? t((m) => m.home.todayOpeningNote, { cash: formatRs(daySummary.expectedCash) })
-                : t((m) => m.home.openSalesHistory)
-            }
+            yesterdayAmount={yesterdaySales}
+            locale={locale}
             vsLabel={t((m) => m.home.vsYesterday)}
+            neutralLabel={t((m) => m.home.trendNeutral)}
+            newLabel={t((m) => m.home.trendNew)}
             viewLabel={t((m) => m.home.view)}
             Icon={TrendDuoIcon}
             onPress={() => navigation.navigate('Sales')}
@@ -545,6 +541,7 @@ const styles = StyleSheet.create({
   top: {
     minHeight: 52,
     paddingHorizontal: 8,
+    paddingTop: 8,
     paddingBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',

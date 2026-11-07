@@ -16,7 +16,8 @@ import { CalendarIcon, ChevronRightIcon, ClockIcon } from './Icons';
 import { useIconPress } from '../hooks/useIconPress';
 import { useCountUp } from '../hooks/useCountUp';
 import { useTheme } from '../context/ThemeContext';
-import { formatDay, formatRs } from '../lib/format';
+import { formatCompactRs, formatDay, formatRs, formatRupeesInWords } from '../lib/format';
+import type { Locale } from '../i18n';
 import { fonts } from '../theme/fonts';
 
 type IconType = ComponentType<{ color?: string; size?: number }>;
@@ -37,9 +38,19 @@ export const gradients = {
 } as const;
 
 /** Money that rolls up to its value. */
-export function CountUpText({ value, delay, style }: { value: number; delay?: number; style?: StyleProp<TextStyle> }) {
+export function CountUpText({
+  value,
+  delay,
+  style,
+  formatter = formatRs,
+}: {
+  value: number;
+  delay?: number;
+  style?: StyleProp<TextStyle>;
+  formatter?: (value: number) => string;
+}) {
   const shown = useCountUp(value, { delay });
-  return <Text style={style}>{formatRs(shown)}</Text>;
+  return <Text style={style}>{formatter(shown)}</Text>;
 }
 
 /** Slow-drifting translucent circle used as card decoration. */
@@ -181,26 +192,44 @@ function ViewLink({ label }: { label: string }) {
   );
 }
 
-function TrendChip({ percent, suffix }: { percent: number; suffix: string }) {
+function TrendChip({
+  today,
+  yesterday,
+  suffix,
+  neutralLabel,
+  newLabel,
+}: {
+  today: number;
+  yesterday: number;
+  suffix: string;
+  neutralLabel: string;
+  newLabel: string;
+}) {
   const reduced = useReducedMotion();
   const bob = useSharedValue(0);
-  const up = percent >= 0;
+  const neutral = today === yesterday;
+  const newToday = yesterday === 0 && today > 0;
+  const up = today > yesterday;
+  const percent = yesterday > 0 ? Math.round((Math.abs(today - yesterday) / yesterday) * 100) : 0;
+  const tone = neutral ? 'neutral' : up ? 'up' : 'down';
 
   useEffect(() => {
-    if (reduced) return;
+    if (reduced || neutral) return;
     bob.value = withDelay(
       1200,
       withRepeat(withTiming(1, { duration: 650, easing: Easing.inOut(Easing.sin) }), -1, true),
     );
-  }, [bob, reduced]);
+  }, [bob, neutral, reduced]);
 
-  const arrow = useAnimatedStyle(() => ({ transform: [{ translateY: bob.value * (up ? -2.5 : 2.5) }] }));
+  const arrow = useAnimatedStyle(() => ({ transform: [{ translateY: neutral ? 0 : bob.value * (up ? -2.5 : 2.5) }] }));
+  const icon = neutral ? '→' : up ? '▲' : '▼';
+  const label = neutral ? neutralLabel : newToday ? newLabel : `${percent}%`;
 
   return (
-    <View style={styles.chip}>
-      <Animated.Text style={[styles.chipText, arrow]}>{up ? '▲' : '▼'}</Animated.Text>
-      <Text style={styles.chipText}>
-        {Math.abs(percent)}% <Text style={styles.chipSoft}>{suffix}</Text>
+    <View style={[styles.chip, tone === 'up' ? styles.chipUp : tone === 'down' ? styles.chipDown : styles.chipNeutral]}>
+      <Animated.Text style={[styles.chipText, styles.trendText, arrow]}>{icon}</Animated.Text>
+      <Text style={[styles.chipText, styles.trendText]}>
+        {label} {!neutral && !newToday ? <Text style={styles.chipSoft}>{suffix}</Text> : null}
       </Text>
     </View>
   );
@@ -213,9 +242,11 @@ export function HeroSalesCard({
   subtitle,
   label,
   amount,
-  percent,
-  hint,
+  yesterdayAmount,
+  locale,
   vsLabel,
+  neutralLabel,
+  newLabel,
   viewLabel,
   Icon,
   onPress,
@@ -226,9 +257,11 @@ export function HeroSalesCard({
   subtitle: string;
   label: string;
   amount: number;
-  percent: number;
-  hint: string;
+  yesterdayAmount: number;
+  locale: Locale;
   vsLabel: string;
+  neutralLabel: string;
+  newLabel: string;
   viewLabel: string;
   Icon: IconType;
   onPress: () => void;
@@ -244,6 +277,13 @@ export function HeroSalesCard({
   const clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
     .map((n) => String(n).padStart(2, '0'))
     .join(':');
+  const amountWords = formatRupeesInWords(amount, locale);
+  const shopImageSize =
+    amountWords.length > 48
+      ? styles.shopImageCompact
+      : amountWords.length > 30
+        ? styles.shopImageMedium
+        : styles.shopImageLarge;
 
   return (
     <CardShell
@@ -278,13 +318,17 @@ export function HeroSalesCard({
         <Text style={styles.cardLabel}>{label}</Text>
         <IconBadge Icon={Icon} size={34} />
       </View>
-      <Image source={DASHBOARD_SHOP_IMAGE} resizeMode="contain" style={styles.shopImage} accessibilityIgnoresInvertColors />
-      <CountUpText value={amount} delay={delay + 150} style={styles.heroAmount} />
-      <Text style={styles.heroHint} numberOfLines={1}>
-        {hint}
-      </Text>
+      <View style={styles.heroValueRow}>
+        <View style={styles.heroValueContent}>
+          <CountUpText value={amount} delay={delay + 150} style={styles.heroAmount} formatter={formatCompactRs} />
+          <Text style={styles.heroHint}>
+            {amountWords}
+          </Text>
+        </View>
+        <Image source={DASHBOARD_SHOP_IMAGE} resizeMode="contain" style={[styles.shopImage, shopImageSize]} accessibilityIgnoresInvertColors />
+      </View>
       <View style={styles.footRow}>
-        <TrendChip percent={percent} suffix={vsLabel} />
+        <TrendChip today={amount} yesterday={yesterdayAmount} suffix={vsLabel} neutralLabel={neutralLabel} newLabel={newLabel} />
         <ViewLink label={viewLabel} />
       </View>
     </CardShell>
@@ -388,7 +432,7 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     padding: 16,
-    minHeight: 170,
+    minHeight: 188,
     gap: 2,
   },
   heroTop: {
@@ -510,7 +554,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.35)',
   },
   heroAmount: {
-    marginTop: 4,
     fontFamily: fonts.bold,
     fontSize: 36,
     lineHeight: 39,
@@ -521,14 +564,34 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontFamily: fonts.semibold,
     fontSize: 12,
+    lineHeight: 17,
     color: 'rgba(255,255,255,0.85)',
   },
+  heroValueRow: {
+    minHeight: 102,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heroValueContent: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
   shopImage: {
-    position: 'absolute',
-    right: 44,
-    bottom: 21,
-    width: 174,
-    height: 116,
+    flexShrink: 0,
+  },
+  shopImageLarge: {
+    width: 150,
+    height: 112,
+  },
+  shopImageMedium: {
+    width: 116,
+    height: 92,
+  },
+  shopImageCompact: {
+    width: 92,
+    height: 74,
   },
   statAmount: {
     marginTop: 10,
@@ -554,12 +617,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
+  chipUp: {
+    backgroundColor: 'rgba(34, 197, 94, 0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(187, 247, 208, 0.5)',
+  },
+  chipDown: {
+    backgroundColor: 'rgba(239, 68, 68, 0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(254, 202, 202, 0.5)',
+  },
+  chipNeutral: {
+    backgroundColor: 'rgba(226, 232, 240, 0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(241, 245, 249, 0.42)',
+  },
   chipShrink: {
     flexShrink: 1,
   },
   chipText: {
     fontFamily: fonts.semibold,
     fontSize: 11.5,
+    color: '#FFFFFF',
+  },
+  trendText: {
     color: '#FFFFFF',
   },
   chipSoft: {
