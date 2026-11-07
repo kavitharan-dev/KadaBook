@@ -412,6 +412,7 @@ function ReportsHero({
         <ImageBackground
           source={appbarBg}
           resizeMode="cover"
+          imageStyle={{ width: '100%', height: '100%' }}
           style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
         >
           <AnimatedIconPress
@@ -461,6 +462,7 @@ function reportsStyles(c: ColorPalette) {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    backgroundColor: '#1D5FE0',
     overflow: 'hidden',
   },
   heroBack: {

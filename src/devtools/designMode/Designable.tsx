@@ -140,8 +140,8 @@ function DesignableActive({
   offsetPan.enabled(selected && !!offsetKey);
 
   return (
-    <View style={dm.active ? [styles.wrap, selected && styles.wrapSelected] : undefined}>
-      <Pressable disabled={!dm.active} onPress={() => dm.select(dm.active ? fullId : null, base)}>
+    <View style={[{ width: '100%' }, dm.active ? [styles.wrap, selected && styles.wrapSelected] : undefined]}>
+      <Pressable style={{ width: '100%' }} disabled={!dm.active} onPress={() => dm.select(dm.active ? fullId : null, base)}>
         {children(value)}
       </Pressable>
       {dm.active ? (

@@ -1,9 +1,8 @@
-import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, ImageBackground, Pressable, ScrollView, Text, View } from 'react-native';
 import { useState } from 'react';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { LinearGradient } from 'expo-linear-gradient';
 import { EditSaleModal, type SaleEdit } from '../components/EditSaleModal';
 import { PrintButton } from '../components/PrintButton';
 import { Toast, useToast } from '../components/Toast';
@@ -30,6 +29,7 @@ import { useStyleSheet } from '../theme/useStyleSheet';
 import { fonts } from '../theme/fonts';
 
 const DAY = 24 * 60 * 60 * 1000;
+const appbarBg = require('../../assets/appbar-bg.png');
 
 export function SalesScreen() {
   const styles = useStyleSheet(salesStyles);
@@ -77,10 +77,10 @@ export function SalesScreen() {
 
       <Designable screen="sales" id="hero" base={salesLayout.hero} offsetKey="marginTop">
         {(v) => (
-          <LinearGradient
-            colors={['#1D5FE0', '#3B82F6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          <ImageBackground
+            source={appbarBg}
+            resizeMode="cover"
+            imageStyle={{ width: '100%', height: '100%' }}
             style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
           >
             <View style={styles.heroTop}>
@@ -134,7 +134,7 @@ export function SalesScreen() {
                 </View>
               )}
             </Designable>
-          </LinearGradient>
+          </ImageBackground>
         )}
       </Designable>
 
@@ -228,6 +228,8 @@ function salesStyles(c: ColorPalette) {
     borderRadius: 24,
     padding: 18,
     gap: 14,
+    backgroundColor: '#1D5FE0',
+    overflow: 'hidden',
   },
   heroTop: {
     flexDirection: 'row',

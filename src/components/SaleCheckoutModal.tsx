@@ -25,7 +25,7 @@ import type { PrintPhase } from '../lib/usePrintFeedback';
 import { BillReceipt } from './BillReceipt';
 import { PrintButton } from './PrintButton';
 import { ErrorText, FillButton } from './ui';
-import { CheckIcon, SaleIcon } from './Icons';
+import { CheckIcon,CloseIcon, SaleIcon } from './Icons';
 import { gradients } from './DashboardCards';
 import { fonts } from '../theme/fonts';
 
@@ -161,6 +161,15 @@ export function SaleCheckoutModal({
                     <Text style={[styles.headSubtitle, { color: colors.muted }]}>{t((m) => m.sale.checkoutTitle)}</Text>
                   </View>
                 </View>
+                 <Pressable
+                  onPress={onClose}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                  style={[styles.close, { borderColor: colors.line }]}
+                >
+                  <CloseIcon color={colors.muted} size={16} />
+                </Pressable>
               </View>
               <ScrollView
                 ref={scrollRef}
@@ -267,6 +276,7 @@ const styles = StyleSheet.create({
   headLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
   headTitle: { fontFamily: fonts.bold, fontSize: 17 },
   headSubtitle: { fontFamily: fonts.regular, fontSize: 12, marginTop: 1 },
+  close: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   body: { gap: 12, paddingBottom: 4 },
   wait: { paddingVertical: 48 },
 

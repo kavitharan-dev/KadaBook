@@ -320,6 +320,7 @@ export function ProductsScreen() {
           <ImageBackground
             source={appbarBg}
             resizeMode="cover"
+            imageStyle={{ width: '100%', height: '100%' }}
             style={[styles.hero, { padding: v.padding, marginTop: v.marginTop, borderRadius: v.borderRadius }]}
           >
             <View style={styles.heroTop}>
@@ -719,7 +720,12 @@ function productsStyles(c: ColorPalette) {
       borderRadius: 24,
       padding: 18,
       gap: 16,
+      backgroundColor: '#1D5FE0',
       overflow: 'hidden',
+    },
+    heroBgImage: {
+      width: '100%',
+      height: '100%',
     },
     heroTop: {
       flexDirection: 'row',
