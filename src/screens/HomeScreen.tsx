@@ -21,7 +21,7 @@ import {
 } from '../components/Icons';
 import { AnimatedIconPress } from '../components/AnimatedIconPress';
 import { HomeActionTile } from '../components/HomeActionTile';
-import { GradientStatCard, HeroSalesCard, gradients } from '../components/DashboardCards';
+import { GradientStatCard, HeroSalesCard, gradients, statCardBg } from '../components/DashboardCards';
 import { FadeUp } from '../components/FadeUp';
 import { PulsingDot } from '../components/PulsingDot';
 import { AppLogo } from '../components/AppLogo';
@@ -464,8 +464,9 @@ export function HomeScreen() {
         <View style={styles.stats}>
           <GradientStatCard
             delay={560}
-            gradient={gradients.teal}
-            glow="rgba(2,123,98,0.32)"
+            gradient={gradients.blue}
+            glow="rgba(0,74,224,0.32)"
+            bgImage={statCardBg.sales}
             label={t((m) => m.home.totalSales)}
             value={monthSales}
             chip={t((m) => m.home.salesCount, { count: monthSaleList.length })}
@@ -478,6 +479,7 @@ export function HomeScreen() {
             delay={640}
             gradient={gradients.orange}
             glow="rgba(253,100,2,0.32)"
+            bgImage={statCardBg.expense}
             label={t((m) => m.home.totalExpenses)}
             value={monthExpenses}
             chip={monthPurchases > 0 ? `Stock ${formatRs(monthPurchases)}` : t((m) => m.home.expensesCount, { count: monthRunning.length })}
@@ -490,6 +492,7 @@ export function HomeScreen() {
             delay={720}
             gradient={monthProfit >= 0 ? gradients.green : gradients.red}
             glow={monthProfit >= 0 ? 'rgba(2,134,37,0.32)' : 'rgba(243,40,42,0.32)'}
+            bgImage={monthProfit >= 0 ? statCardBg.profit : undefined}
             label={t((m) => m.home.profit)}
             value={monthProfit}
             chip={t((m) => m.home.margin, { percent: margin })}

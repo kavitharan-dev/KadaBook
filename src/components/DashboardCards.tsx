@@ -1,5 +1,15 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
-import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
@@ -23,6 +33,12 @@ import { fonts } from '../theme/fonts';
 type IconType = ComponentType<{ color?: string; size?: number }>;
 
 const DASHBOARD_SHOP_IMAGE = require('../../assets/dashboard/dashboard-card-shop-img.png');
+const APPBAR_BG = require('../../assets/appbar-bg.png');
+export const statCardBg = {
+  sales: require('../../assets/dashboard/db-total-sales-card-bg.png'),
+  expense: require('../../assets/dashboard/db-total-expense-card-bg.png'),
+  profit: require('../../assets/dashboard/db-profit-card-bg.png'),
+} as const;
 
 /** Sampled directly from assets/screens-ui/dashboard-ui.png's hero card — not shared, only HeroSalesCard uses this. */
 const HERO_GRADIENT = ['#002FBA', '#004ADF', '#0176F8'] as const;
@@ -133,6 +149,7 @@ function CardShell({
   delay,
   gradient,
   glow,
+  bgImage,
   onPress,
   onLongPress,
   accessibilityLabel,
@@ -143,6 +160,7 @@ function CardShell({
   delay: number;
   gradient: readonly [string, string, ...string[]];
   glow: string;
+  bgImage?: ImageSourcePropType;
   onPress: () => void;
   onLongPress?: () => void;
   accessibilityLabel: string;
@@ -163,9 +181,20 @@ function CardShell({
           onPressOut={onPressOut}
         >
           <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.card, innerStyle]}>
-            <FloatingOrb size={150} style={styles.orbBig} />
-            <FloatingOrb size={90} style={styles.orbSmall} phase={900} />
-            <WaveAccent />
+            {bgImage ? (
+              <Image
+                source={bgImage}
+                resizeMode="cover"
+                style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
+                accessibilityIgnoresInvertColors
+              />
+            ) : (
+              <>
+                <FloatingOrb size={150} style={styles.orbBig} />
+                <FloatingOrb size={90} style={styles.orbSmall} phase={900} />
+                <WaveAccent />
+              </>
+            )}
             <ShimmerSweep />
             {children}
           </LinearGradient>
@@ -290,6 +319,7 @@ export function HeroSalesCard({
       delay={delay}
       gradient={HERO_GRADIENT}
       glow="rgba(0,74,224,0.35)"
+      bgImage={APPBAR_BG}
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityLabel={`${title}. ${label}`}
@@ -340,6 +370,7 @@ export function GradientStatCard({
   delay,
   gradient,
   glow,
+  bgImage,
   label,
   value,
   chip,
@@ -351,6 +382,7 @@ export function GradientStatCard({
   delay: number;
   gradient: readonly [string, string, ...string[]];
   glow: string;
+  bgImage?: ImageSourcePropType;
   label: string;
   value: number;
   chip: string;
@@ -364,6 +396,7 @@ export function GradientStatCard({
       delay={delay}
       gradient={gradient}
       glow={glow}
+      bgImage={bgImage}
       onPress={onPress}
       accessibilityLabel={label}
       style={style}
@@ -582,7 +615,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   shopImageLarge: {
-    width: 150,
+    width: 120,
     height: 112,
   },
   shopImageMedium: {
@@ -590,7 +623,7 @@ const styles = StyleSheet.create({
     height: 92,
   },
   shopImageCompact: {
-    width: 92,
+    width: 82,
     height: 74,
   },
   statAmount: {
@@ -601,7 +634,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   footRow: {
-    marginTop: 'auto',
+    marginTop: -8,
     paddingTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
