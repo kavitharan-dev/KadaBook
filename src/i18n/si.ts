@@ -297,7 +297,7 @@ export const si: Messages = {
     checking: 'ගිණුම පරීක්ෂා කරමින්…',
   },
   settings: {
-    title: 'සැකසුම්',
+    title: 'වෙළඳසැල් සැකසුම්',
     receiptTitle: 'රසීදුව',
     receiptSub: 'Thermal / PDF invoice',
     themeTitle: 'Theme',
@@ -315,7 +315,7 @@ export const si: Messages = {
     buyNow: 'Buy Now',
     currentPlan: 'Current plan',
     planUpdated: 'Plan updated.',
-    openSettings: 'Settings',
+    openSettings: 'වෙළඳසැල් සැකසුම්',
     lowStock: 'Low stock',
     printReport: 'Print report',
     printFailed: 'Print failed',

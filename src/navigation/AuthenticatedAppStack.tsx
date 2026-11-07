@@ -9,8 +9,10 @@ import { DataToolsScreen } from '../screens/DataToolsScreen';
 import { StaffScreen } from '../screens/StaffScreen';
 import { AuditLogScreen } from '../screens/AuditLogScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { FaqScreen, PrivacyScreen, TermsScreen } from '../screens/LegalScreens';
 import { ExpensesScreen, MonthScreen } from '../screens/ListsScreen';
 import { MoreScreen } from '../screens/MoreScreen';
+import { ShopDetailsScreen } from '../screens/ShopDetailsScreen';
 import { NewSaleScreen } from '../screens/NewSaleScreen';
 import { NotificationsScreen } from '../screens/NotificationsScreen';
 import { ProductsScreen } from '../screens/ProductsScreen';
@@ -44,6 +46,7 @@ const Kitchen = requireFeature(requirePermission(KitchenScreen, 'manageStock', '
 const DataTools = requireFeature(requirePermission(DataToolsScreen, 'exportData', 'Excel export & import'), 'exportData', 'Excel export & import');
 const Staff = requireFeature(requirePermission(StaffScreen, 'manageStaff', 'Staff'), 'staff', 'Staff');
 const AuditLog = requireFeature(requirePermission(AuditLogScreen, 'viewAudit', 'Audit log'), 'staff', 'Audit log');
+const ShopDetails = requirePermission(ShopDetailsScreen, 'shopSettings', 'Shop Details');
 
 const AppStack = createNativeStackNavigator<AppStackParamList>();
 const Tabs = createBottomTabNavigator<TabParamList>();
@@ -81,6 +84,10 @@ export function AuthenticatedAppStack() {
       <AppStack.Screen name="DataTools" component={DataTools} />
       <AppStack.Screen name="Staff" component={Staff} />
       <AppStack.Screen name="AuditLog" component={AuditLog} />
+      <AppStack.Screen name="ShopDetails" component={ShopDetails} />
+      <AppStack.Screen name="Terms" component={TermsScreen} />
+      <AppStack.Screen name="Privacy" component={PrivacyScreen} />
+      <AppStack.Screen name="Faq" component={FaqScreen} />
     </AppStack.Navigator>
   );
 }

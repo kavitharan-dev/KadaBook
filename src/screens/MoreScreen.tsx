@@ -9,6 +9,7 @@ import {
   BookDuoIcon,
   CameraIcon,
   ClipboardDuoIcon,
+  DocumentDuoIcon,
   FileExportDuoIcon,
   GearIcon,
   GridDuoIcon,
@@ -19,8 +20,10 @@ import {
   PrinterIcon,
   ShieldIcon,
   SunIcon,
+  TrendDuoIcon,
   UsersDuoIcon,
 } from '../components/Icons';
+import { AboutModal } from '../components/AboutModal';
 import { markSignedOut, usePinLock } from '../components/PinLockGate';
 import { ErrorText, Field, FillButton, Header, Screen } from '../components/ui';
 import type { Locale } from '../i18n';
@@ -129,7 +132,7 @@ export function MoreScreen() {
   const navigation = useNavigation<
     CompositeNavigationProp<BottomTabNavigationProp<TabParamList, 'More'>, NativeStackNavigationProp<AppStackParamList>>
   >();
-  const { user, cloud, signOut, updateShopName } = useAuth();
+  const { user, signOut } = useAuth();
   const { books, setQuickSaleProfitPercent } = useBooks();
   const { role, can } = useRole();
   const isOwner = role === 'owner';
@@ -152,33 +155,16 @@ export function MoreScreen() {
   const { has } = useTier();
   const savedQuickPct = resolveQuickSaleProfitPercent(books.meta);
 
-  const [shopName, setShopName] = useState(currentName);
   const [quickPctInput, setQuickPctInput] = useState(String(savedQuickPct));
+  const [quickExpanded, setQuickExpanded] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setShopName(currentName);
-  }, [currentName]);
-
-  useEffect(() => {
     setQuickPctInput(String(savedQuickPct));
   }, [savedQuickPct]);
-
-  async function saveName() {
-    setError(null);
-    setMessage(null);
-    setBusy(true);
-    try {
-      await updateShopName(shopName.trim());
-      setMessage(t((m) => m.more.shopSaved));
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t((m) => m.more.shopError));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function saveQuickProfit() {
     setError(null);
@@ -225,6 +211,7 @@ export function MoreScreen() {
 
   return (
     <Screen>
+      <AboutModal visible={aboutOpen} onClose={() => setAboutOpen(false)} />
       <Header title={t((m) => m.more.title)} onBack={() => navigation.navigate('Home')} />
       <ScrollView
         contentContainerStyle={[styles.body, wide && styles.bodyWide]}
@@ -275,29 +262,26 @@ export function MoreScreen() {
           </View>
         </LinearGradient>
 
-        <Section label={t((m) => m.common.account)} Icon={UsersDuoIcon} tint="#1D5FE0">
-          <View style={styles.cardPad}>
-            <View>
-              <Text style={styles.fieldLabel}>Signed in as</Text>
-              <Text style={styles.fieldValue} numberOfLines={1}>
-                {user?.staffName ? `${user.staffName} · ` : ''}
-                {account} · {ROLE_LABEL[role]}
-              </Text>
-            </View>
-            {can('shopSettings') ? (
-              <>
-                <View style={styles.divider} />
-                <Text style={styles.fieldLabel}>{t((m) => m.more.shopName)}</Text>
-                <Field value={shopName} onChangeText={setShopName} placeholder={t((m) => m.more.shopName)} />
-                <FillButton
-                  label={t((m) => m.more.saveShop)}
-                  onPress={saveName}
-                  busy={busy}
-                  disabled={busy || !shopName.trim() || shopName.trim() === currentName}
-                />
-                <View style={styles.divider} />
-                <Text style={styles.fieldLabel}>{t((m) => m.more.quickProfitPercent)}</Text>
-                <Text style={styles.fieldHint}>{t((m) => m.more.quickProfitPercentHint)}</Text>
+        {can('shopSettings') ? (
+          <Section label="Shop details" Icon={UsersDuoIcon} tint="#1D5FE0">
+            <Row
+              title="Shop details"
+              subtitle={currentName || 'Add your shop name'}
+              onPress={() => navigation.navigate('ShopDetails')}
+              Icon={GearIcon}
+              tint="#1D5FE0"
+            />
+            <Row
+              title={t((m) => m.more.quickProfitPercent)}
+              subtitle={quickExpanded ? t((m) => m.more.quickProfitPercentHint) : `${savedQuickPct}%`}
+              onPress={() => setQuickExpanded((v) => !v)}
+              Icon={TrendDuoIcon}
+              tint="#1D5FE0"
+              last={!quickExpanded}
+              right={<Text style={styles.chevron}>{quickExpanded ? '⌄' : '›'}</Text>}
+            />
+            {quickExpanded ? (
+              <View style={[styles.cardPad, styles.rowLine]}>
                 <Field
                   value={quickPctInput}
                   onChangeText={setQuickPctInput}
@@ -310,12 +294,12 @@ export function MoreScreen() {
                   busy={busy}
                   disabled={busy || String(savedQuickPct) === quickPctInput.trim()}
                 />
-              </>
+                <ErrorText message={error} />
+                {message ? <Text style={styles.ok}>{message}</Text> : null}
+              </View>
             ) : null}
-            <ErrorText message={error} />
-            {message ? <Text style={styles.ok}>{message}</Text> : null}
-          </View>
-        </Section>
+          </Section>
+        ) : null}
 
         <Section label="Preferences" Icon={SunIcon} tint="#D97706">
           <View style={styles.cardPad}>
@@ -463,20 +447,6 @@ export function MoreScreen() {
           />
         </Section>
 
-        {!cloud ? (
-          <View style={styles.setup}>
-            <Text style={styles.setupTitle}>{t((m) => m.more.firebaseTitle)}</Text>
-            <Text style={styles.hint}>
-              1. Create a project at console.firebase.google.com{'\n'}
-              2. Turn on Authentication → Email/Password{'\n'}
-              3. Create Firestore database{'\n'}
-              4. Copy web app keys into .env (see .env.example){'\n'}
-              5. Run: firebase deploy --only firestore:rules{'\n'}
-              6. Restart Expo (npx expo start)
-            </Text>
-          </View>
-        ) : null}
-
         <Section label="Support" Icon={HelpCircleIcon} tint="#0369A1">
           <Row
             title={t((m) => m.tips.title)}
@@ -484,12 +454,35 @@ export function MoreScreen() {
             onPress={() => navigation.navigate('TipsHelp')}
             Icon={HelpCircleIcon}
             tint="#0369A1"
+          />
+          <Row
+            title="FAQ"
+            subtitle="Quick answers to common questions"
+            onPress={() => navigation.navigate('Faq')}
+            Icon={HelpCircleIcon}
+            tint="#0369A1"
+            last
+          />
+        </Section>
+
+        <Section label="Legal" Icon={DocumentDuoIcon} tint="#64748B">
+          <Row
+            title="Terms & Conditions"
+            onPress={() => navigation.navigate('Terms')}
+            Icon={DocumentDuoIcon}
+            tint="#64748B"
+          />
+          <Row
+            title="Privacy Policy"
+            onPress={() => navigation.navigate('Privacy')}
+            Icon={DocumentDuoIcon}
+            tint="#64748B"
             last
           />
         </Section>
 
         <Section label="About" Icon={InfoCircleIcon} tint="#64748B">
-          <Row title="Developed by" subtitle="Matrix Smart Store" />
+          <Row title="Developed by" subtitle="SMART PVT LTD" onPress={() => setAboutOpen(true)} Icon={InfoCircleIcon} tint="#64748B" />
           <Row title="Version" subtitle={`KadaBook v${APP_VERSION}`} />
           <Row title="Update tag" subtitle={BUILD_TAG} />
           <Row
@@ -662,10 +655,6 @@ function moreStyles(c: ColorPalette) {
       padding: 16,
       gap: 12,
     },
-    divider: {
-      height: 1,
-      backgroundColor: c.rowLine,
-    },
     row: {
       minHeight: 60,
       flexDirection: 'row',
@@ -717,40 +706,6 @@ function moreStyles(c: ColorPalette) {
       color: c.muted,
       marginBottom: 4,
     },
-    typeHint: {
-      fontFamily: fonts.regular,
-      fontSize: 12,
-      lineHeight: 17,
-      color: c.muted,
-      marginTop: -4,
-    },
-    typeRow: {
-      flexDirection: 'row',
-      gap: 8,
-    },
-    typeChip: {
-      flex: 1,
-      minHeight: 44,
-      borderWidth: 1.5,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingHorizontal: 8,
-    },
-    typeChipText: {
-      fontFamily: fonts.semibold,
-      fontSize: 13,
-      textAlign: 'center',
-    },
-    fieldValue: {
-      marginTop: 2,
-      fontFamily: fonts.semibold,
-      fontSize: 15,
-      color: c.ink,
-    },
-    logoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-    logo: { width: 56, height: 56, borderRadius: 12 },
-    logoActions: { gap: 6 },
     langRow: {
       flexDirection: 'row',
       gap: 8,
@@ -783,25 +738,6 @@ function moreStyles(c: ColorPalette) {
       fontFamily: fonts.semibold,
       fontSize: 13,
       color: c.saleText,
-    },
-    setup: {
-      borderWidth: 1,
-      borderColor: c.hairline,
-      borderRadius: 18,
-      padding: 16,
-      gap: 6,
-    },
-    setupTitle: {
-      fontFamily: fonts.semibold,
-      fontSize: 15,
-      color: c.ink,
-      marginBottom: 4,
-    },
-    hint: {
-      fontFamily: fonts.regular,
-      fontSize: 13,
-      lineHeight: 18,
-      color: c.muted,
     },
     signOut: {
       height: 52,

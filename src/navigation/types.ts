@@ -27,6 +27,10 @@ export type AppStackParamList = {
   DataTools: undefined;
   Staff: undefined;
   AuditLog: undefined;
+  ShopDetails: undefined;
+  Terms: undefined;
+  Privacy: undefined;
+  Faq: undefined;
 };
 
 export type AuthStackParamList = {

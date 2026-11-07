@@ -297,7 +297,7 @@ export const ta: Messages = {
     checking: 'கணக்கை சரிபார்க்கிறது…',
   },
   settings: {
-    title: 'அமைப்புகள்',
+    title: 'கடை அமைப்புகள்',
     receiptTitle: 'ரசீது',
     receiptSub: 'Thermal / PDF invoice',
     themeTitle: 'Theme',
@@ -315,7 +315,7 @@ export const ta: Messages = {
     buyNow: 'Buy Now',
     currentPlan: 'Current plan',
     planUpdated: 'Plan updated.',
-    openSettings: 'Settings',
+    openSettings: 'கடை அமைப்புகள்',
     lowStock: 'Low stock',
     printReport: 'Print report',
     printFailed: 'Print failed',

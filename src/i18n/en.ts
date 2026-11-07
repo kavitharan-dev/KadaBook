@@ -297,7 +297,7 @@ export const en: Messages = {
     checking: 'Checking your account…',
   },
   settings: {
-    title: 'Settings',
+    title: 'Shop Settings',
     receiptTitle: 'Receipt',
     receiptSub: 'Customize thermal and PDF invoice',
     themeTitle: 'Theme',
@@ -315,7 +315,7 @@ export const en: Messages = {
     buyNow: 'Buy Now',
     currentPlan: 'Current plan',
     planUpdated: 'Plan updated on this device.',
-    openSettings: 'Settings',
+    openSettings: 'Shop Settings',
     lowStock: 'Low stock products',
     printReport: 'Print report',
     printFailed: 'Print failed',
